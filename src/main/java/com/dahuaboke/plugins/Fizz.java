@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.lang.annotation.Annotation;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLClassLoader;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,42 +32,27 @@ public class Fizz {
 
     private String[] packages;
 
-    URL jarUrl;
-
-    private ClassLoader classLoader;
-
     private Reflections reflections;
     private Map<String, ClassMetadata> CACHE_CLASSES = new HashMap<>();
     private Set<String> FEIGN_CLASSNAMES = new HashSet<>();
     private InterfaceHandler interfaceHandler = new IFundInterfaceHandler();
 
-    public Fizz(String jarpath, String annotationClass, String[] packages, Log log) throws MalformedURLException {
+    public Fizz(String jarpath, String annotationClass, String[] packages, Log log) throws MalformedURLException, ClassNotFoundException {
         this.jarpath = jarpath;
         this.annotationClass = annotationClass;
         this.packages = packages;
-//        this.log = log;
-        this.jarUrl = new URL("file:" + jarpath);
-        classLoader = this.getClass().getClassLoader();
-//        this.classLoader = new URLClassLoader(new URL[]{jarUrl});
-//        ConfigurationBuilder builder = new ConfigurationBuilder()
-//                .setUrls(jarUrl)
-//                .addClassLoaders(classLoader)
-//                .filterInputsBy(input -> {
-//                    if (packages != null && packages.length > 0) {
-//                        return startWithPackages(input);
-//                    } else {
-//                        return true;
-//                    }
-//                });
-//        this.reflections = new Reflections(builder);
-        this.reflections = new Reflections(new ConfigurationBuilder().forPackages(packages));
+        URLClassLoader classloader = LoadJarClassUtil.getClassloader(packages, jarpath);
+        ConfigurationBuilder builder = new ConfigurationBuilder();
+        builder.addClassLoaders(classloader);
+        builder.setUrls(new URL("file:" + jarpath));
+        this.reflections = new Reflections(builder);
     }
 
     public void run() throws Exception {
         Map<String, List<Node>> feignNode = new HashMap<>();
         Class<? extends Annotation> feignClass = null;
         try {
-            feignClass = (Class<? extends Annotation>) Class.forName(FEIGN_ANNO_PATH.replaceAll("/", "\\."), true, classLoader);
+            feignClass = (Class<? extends Annotation>) Class.forName(FEIGN_ANNO_PATH.replaceAll("/", "\\."));
         } catch (ClassNotFoundException e) {
         }
         if (feignClass != null) {
@@ -82,7 +68,7 @@ public class Fizz {
                 feignNode.put(interfaceClass.getName(), nodes);
             }
         }
-        Class<? extends Annotation> aClass = (Class<? extends Annotation>) Class.forName(annotationClass, true, classLoader);
+        Class<? extends Annotation> aClass = (Class<? extends Annotation>) Class.forName(annotationClass);
         Set<Class<?>> classes = searchClassByAnnotation(aClass);
         List<Node> chainNode = buildChain(classes);
         HashMap result = new HashMap();
@@ -119,7 +105,7 @@ public class Fizz {
         return classes == null ? new HashSet<>() : classes;
     }
 
-    private List<Node> buildChain(Set<Class<?>> classes) throws IOException {
+    private List<Node> buildChain(Set<Class<?>> classes) throws IOException, ClassNotFoundException {
         for (Class<?> clz : classes) {
             if (!clz.isInterface()) {
                 cache(clz.getName().replaceAll("\\.", "/"));
@@ -132,7 +118,7 @@ public class Fizz {
         return chains;
     }
 
-    private void cache(String cname) throws IOException {
+    private void cache(String cname) throws IOException, ClassNotFoundException {
         if (!startWithPackages(cname)) {
             return;
         }
@@ -143,8 +129,11 @@ public class Fizz {
         final ClassMetadata classMetadata = new ClassMetadata();
         classMetadata.setName(cname);
         CACHE_CLASSES.put(cname, classMetadata);
-        ClassReader classReader = new ClassReader(cname);
-//        ClassReader classReader = new ClassReader(getClassInJar(cname));
+        InputStream classInputStream = LoadJarClassUtil.getClassInputStream(cname);
+        if (classInputStream == null) {
+            return;
+        }
+        ClassReader classReader = new ClassReader(classInputStream);
         Map<String, Map<String, Integer>> methodLineMap = new HashMap<>();
         AtomicReference<String> tempMethodNameAndParam = new AtomicReference<>("");
         AtomicInteger beforeLastLine = new AtomicInteger(0);
@@ -540,7 +529,7 @@ public class Fizz {
     private class IFundInterfaceHandler implements InterfaceHandler {
         @Override
         public String findImplementClassNameByInterface(String interfaceName) throws ClassNotFoundException {
-            Class<?> interfaceClassName = Class.forName(interfaceName, true, classLoader);
+            Class<?> interfaceClassName = Class.forName(interfaceName);
             Set<Class<?>> classes = searchClassByInterface(interfaceClassName);
             if (!classes.isEmpty()) {
                 return new ArrayList<>(classes).get(0).getName();
