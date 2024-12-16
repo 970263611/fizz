@@ -63,12 +63,11 @@ public class Fizz {
     }
 
     public void run() throws Exception {
-        List<Node> feignNode = new ArrayList<>();
+        Map<String, List<Node>> feignNode = new HashMap<>();
         Class<? extends Annotation> feignClass = null;
         try {
             feignClass = (Class<? extends Annotation>) Class.forName(FEIGN_ANNO_PATH.replaceAll("/", "\\."), true, classLoader);
         } catch (ClassNotFoundException e) {
-            System.out.println("不存在feign:" + e.getMessage());
         }
         if (feignClass != null) {
             Set<Class<?>> interfaceClasses = searchClassByAnnotation(feignClass);
@@ -77,10 +76,12 @@ public class Fizz {
                     FEIGN_CLASSNAMES.add(clz.getName().replaceAll("\\.", "/"));
                 }
             }
-            Set<Class<?>> classes = searchClassByInterface(interfaceClasses);
-            feignNode = buildChain(classes);
+            for (Class<?> interfaceClass : interfaceClasses) {
+                Set<Class<?>> classes = searchClassByInterface(interfaceClass);
+                List<Node> nodes = buildChain(classes);
+                feignNode.put(interfaceClass.getName(), nodes);
+            }
         }
-
         Class<? extends Annotation> aClass = (Class<? extends Annotation>) Class.forName(annotationClass, true, classLoader);
         Set<Class<?>> classes = searchClassByAnnotation(aClass);
         List<Node> chainNode = buildChain(classes);
