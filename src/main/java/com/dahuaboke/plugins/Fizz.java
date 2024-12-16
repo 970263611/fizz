@@ -314,7 +314,28 @@ public class Fizz {
             node.setName(temp);
             alreadyInvoke.add(temp);
             List<TraceMetadata> traces = method.getTraces();
-            drawTrace(traces, node, alreadyInvoke);
+            if (traces != null) {
+                List<TraceMetadata> distinctTraces = new ArrayList<>();
+                for (TraceMetadata trace : traces) {
+                    boolean has = false;
+                    String c1 = trace.getClassName();
+                    String m1 = trace.getMethodName();
+                    String p1 = trace.getMethodParam();
+                    for (TraceMetadata distinctTrace : distinctTraces) {
+                        String c2 = distinctTrace.getClassName();
+                        String m2 = distinctTrace.getMethodName();
+                        String p2 = distinctTrace.getMethodParam();
+                        if (c1.equals(c2) && m1.equals(m2) && p1.equals(p2)) {
+                            has = true;
+                            break;
+                        }
+                    }
+                    if (!has) {
+                        distinctTraces.add(trace);
+                    }
+                }
+                drawTrace(distinctTraces, node, alreadyInvoke);
+            }
         }
     }
 
