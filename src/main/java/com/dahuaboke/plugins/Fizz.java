@@ -288,7 +288,6 @@ public class Fizz {
     }
 
     private void draw(String cname, List<Node> chains) {
-        HashSet<String> alreadyInvoke = new HashSet<>();
         ClassMetadata classMetadata = CACHE_CLASSES.get(cname.replaceAll("\\.", "/"));
         if (classMetadata == null) {
             System.err.println(cname);
@@ -299,6 +298,7 @@ public class Fizz {
             return;
         }
         for (MethodMetadata method : methods) {
+            HashSet<String> alreadyInvoke = new HashSet<>();
             Node node = new Node();
             String methodName = method.getName();
             if (methodName.startsWith("lambda$")) {
