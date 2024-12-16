@@ -3,18 +3,20 @@ package com.dahuaboke.plugins;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.annotation.JSONType;
+import org.apache.maven.plugin.logging.Log;
 import org.objectweb.asm.*;
 import org.reflections.Reflections;
 import org.reflections.util.ConfigurationBuilder;
-import sun.rmi.runtime.Log;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.annotation.Annotation;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.net.URLClassLoader;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -142,6 +144,11 @@ public class Fizz {
         CACHE_CLASSES.put(cname, classMetadata);
         ClassReader classReader = new ClassReader(cname);
 //        ClassReader classReader = new ClassReader(getClassInJar(cname));
+        Map<String, Map<String, Integer>> methodLineMap = new HashMap<>();
+        AtomicReference<String> tempMethodNameAndParam = new AtomicReference<>("");
+        AtomicInteger beforeLastLine = new AtomicInteger(0);
+        AtomicReference<String> beforeMethodNameAndParam = new AtomicReference<>("");
+        AtomicInteger nowMethodLine = new AtomicInteger(0);
         classReader.accept(new ClassVisitor(Opcodes.ASM9) {
             boolean isFeign = false;
             boolean isMapper = false;
@@ -164,32 +171,73 @@ public class Fizz {
                 }
                 classMetadata.setFeign(isFeign);
                 classMetadata.setMapper(isMapper);
-                MethodMetadata methodMetadata = new MethodMetadata();
-                methodMetadata.setName(cMethod);
-                methodMetadata.setParam(cDescriptor);
-                classMetadata.setMethod(methodMetadata);
-                String finalCMethod = cMethod;
+                AtomicReference<MethodMetadata> methodMetadata = new AtomicReference<>(new MethodMetadata());
+                methodMetadata.get().setName(cMethod);
+                methodMetadata.get().setParam(cDescriptor);
+                classMetadata.setMethod(methodMetadata.get());
+                AtomicReference<String> finalCMethod = new AtomicReference<>(cMethod);
+                AtomicReference<String> finalCDescriptor = new AtomicReference<>(cDescriptor);
                 return new MethodVisitor(Opcodes.ASM9) {
                     @Override
                     public void visitLineNumber(int line, Label start) {
-                        System.out.println(cname + "------" + cMethod + "------" + cDescriptor + "------" + line + "--------");
+                        nowMethodLine.set(line);
+                        String nowMethodNameAndParam = cMethod + "#" + cDescriptor;
+                        if (!tempMethodNameAndParam.get().equals(nowMethodNameAndParam)) {
+                            tempMethodNameAndParam.set(nowMethodNameAndParam);
+                            methodLineMap.put(nowMethodNameAndParam, new HashMap<String, Integer>() {{
+                                put("begin", line);
+                            }});
+                            Map<String, Integer> beforeMethodNameAndParamMap = methodLineMap.get(beforeMethodNameAndParam.get());
+                            if (beforeMethodNameAndParamMap != null) {
+                                beforeMethodNameAndParamMap.put("end", beforeLastLine.get());
+                            }
+                        }
+                        beforeLastLine.set(line);
+                        beforeMethodNameAndParam.set(nowMethodNameAndParam);
                         super.visitLineNumber(line, start);
                     }
 
                     @Override
                     public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
-                        if (opcode == Opcodes.INVOKEVIRTUAL) {
-                            System.out.println(access + "---在Lambda编译后的类中发现invokevirtual指令------" + cname + "----" + cMethod + "，调用的方法所属类：" + owner + "，方法名：" + name + "，方法描述符：" + descriptor);
-                        }
                         if (!classMetadata.isFeign && !classMetadata.isMapper && startWithPackages(owner)) {
                             try {
+                                if (finalCMethod.get().startsWith("lambda$")) {
+                                    AtomicBoolean match = new AtomicBoolean(false);
+                                    String tempMethodName = finalCMethod.get().split("\\$")[1];
+                                    methodLineMap.forEach((k, v) -> {
+                                        String mName = k.split("#")[0];
+                                        String mParam = k.split("#")[1];
+                                        if (tempMethodName.equals(mName)) {
+                                            int line = nowMethodLine.get();
+                                            Integer begin = v.get("begin");
+                                            Integer end = v.get("end");
+                                            if (line >= begin && line <= end) {
+                                                match.set(true);
+                                                ClassMetadata tempClassMetadata = CACHE_CLASSES.get(cname);
+                                                List<MethodMetadata> methods = tempClassMetadata.getMethods();
+                                                for (MethodMetadata data : methods) {
+                                                    String n = data.getName();
+                                                    String p = data.getParam();
+                                                    if (mName.equals(n) && mParam.equals(p)) {
+                                                        finalCMethod.set(mName);
+                                                        finalCDescriptor.set(mParam);
+                                                        methodMetadata.set(data);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    });
+                                    if (!match.get()) {
+                                        return;
+                                    }
+                                }
                                 if (isInterface) {
                                     if (!FEIGN_CLASSNAMES.contains(owner)) {
                                         String implementClassNameByInterface = interfaceHandler.findImplementClassNameByInterface(owner.replaceAll("/", "\\."));
-                                        loadTrace(implementClassNameByInterface, name, descriptor, methodMetadata, cname, finalCMethod, cDescriptor);
+                                        loadTrace(implementClassNameByInterface, name, descriptor, methodMetadata.get(), cname, finalCMethod.get(), finalCDescriptor.get());
                                     }
                                 } else {
-                                    loadTrace(owner, name, descriptor, methodMetadata, cname, finalCMethod, cDescriptor);
+                                    loadTrace(owner, name, descriptor, methodMetadata.get(), cname, finalCMethod.get(), finalCDescriptor.get());
                                 }
                             } catch (Exception e) {
                                 throw new RuntimeException(e);
@@ -250,18 +298,14 @@ public class Fizz {
         if (methods == null) {
             return;
         }
-//        Map<String, Node> nodes = new HashMap<>();
         for (MethodMetadata method : methods) {
             Node node = new Node();
             String methodName = method.getName();
-//            if (methodName.startsWith("$lambda$")) {
-//                methodName = methodName.split("\\$")[1];
-//                node = nodes.get(methodName);
-//            } else {
-//                nodes.put(methodName, node);
+            if (methodName.startsWith("lambda$")) {
+                return;
+            }
             chains.add(node);
             node.setFeign(classMetadata.isFeign());
-//            }
             String temp = cname.replaceAll("\\.", "/") + "#" + methodName + "#" + method.getParam();
             if (alreadyInvoke.contains(temp)) {
                 node.setCycle(temp);
