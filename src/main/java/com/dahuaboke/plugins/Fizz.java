@@ -11,6 +11,7 @@ import org.reflections.util.ConfigurationBuilder;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -64,6 +65,23 @@ public class Fizz {
             }
             for (Class<?> interfaceClass : interfaceClasses) {
                 Set<Class<?>> classes = searchClassByInterface(interfaceClass);
+                if (!classes.isEmpty()) {
+                    Iterator<Class<?>> iterator = classes.iterator();
+                    while (iterator.hasNext()) {
+                        Class<?> clz = iterator.next();
+                        if(clz.isInterface()){
+                            iterator.remove();
+                        }else{
+                            Annotation annotation = clz.getAnnotation(feignClass);
+                            Class<? extends Annotation> aClass = annotation.getClass();
+                            Field fallbackFactory = aClass.getField("fallbackFactory");
+                            Class<?> fallbackCalss = (Class<?>) fallbackFactory.get(annotation);
+                            if (fallbackCalss == feignClass){
+                                iterator.remove();
+                            }
+                        }
+                    }
+                }
                 List<Node> nodes = buildChain(classes);
                 feignNode.put(interfaceClass.getName(), nodes);
             }
