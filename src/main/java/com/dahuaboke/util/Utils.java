@@ -27,7 +27,6 @@ public class Utils {
             JarEntry jarEntry = entries.nextElement();
             String entryName = jarEntry.getName();
             entryName = entryName.substring(entryName.lastIndexOf("/") + 1);
-            System.out.println(entryName);
             if(entryName.equals(fileName)){
                 try {
                     return jarFile.getInputStream(jarEntry);
