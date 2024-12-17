@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -19,38 +21,61 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 
 public class Fizz {
 
     private final String FEIGN_ANNO_PATH = "org/springframework/cloud/openfeign/FeignClient";
     private final String MAPPER_ANNO_PATH = "org/apache/ibatis/annotations/Mapper";
-
-    private String jarpath;
-
-    private String annotationClass;
-
+    private String jarPath;
+    private String search;
+    private String[] marks;
     private String[] packages;
-
     private Reflections reflections;
     private Map<String, ClassMetadata> CACHE_CLASSES = new HashMap<>();
     private Set<String> FEIGN_CLASSNAMES = new HashSet<>();
     private InterfaceHandler interfaceHandler = new IFundInterfaceHandler();
+    private Map<String, Map<String, String>> annotationMetadata = new HashMap<>();
 
-    public Fizz(String jarpath, String annotationClass, String[] packages, Log log) throws MalformedURLException, ClassNotFoundException {
-        this.jarpath = jarpath;
-        this.annotationClass = annotationClass;
+    public Fizz(String jarPath, String search, String[] marks, String[] packages, Log log) throws MalformedURLException, ClassNotFoundException {
+        this.jarPath = jarPath;
+        this.search = search;
+        this.marks = marks;
         this.packages = packages;
-        URLClassLoader classloader = LoadJarClassUtil.getClassloader(packages, jarpath);
-        ConfigurationBuilder builder = new ConfigurationBuilder();
-        builder.addClassLoaders(classloader);
-        builder.setUrls(new URL("file:" + jarpath));
+        ConfigurationBuilder builder;
+        if (jarPath != null) {
+            builder = new ConfigurationBuilder();
+            URLClassLoader classloader = LoadJarClassUtil.getClassloader(packages, jarPath);
+            builder.addClassLoaders(classloader);
+            builder.setUrls(new URL("file:" + jarPath));
+        } else {
+            builder = new ConfigurationBuilder().forPackages(packages);
+        }
         this.reflections = new Reflections(builder);
     }
 
     public void run() throws Exception {
         Map<String, List<Node>> feignNode = new HashMap<>();
+        buildFeignData(feignNode);
+        Class<? extends Annotation> aClass = (Class<? extends Annotation>) Class.forName(search);
+        Set<Class<?>> classes = searchClassByAnnotation(aClass);
+        try {
+            parseAnnotationMetadata(aClass, classes);
+            for (String markClassName : marks) {
+                Class<? extends Annotation> markClass = (Class<? extends Annotation>) Class.forName(markClassName);
+                Set<Class<?>> tempMarkClasses = searchClassByAnnotation(markClass);
+                parseAnnotationMetadata(markClass, tempMarkClasses);
+            }
+        } catch (Exception e) {
+        }
+        List<Node> chainNode = buildChain(classes);
+        HashMap result = new HashMap();
+        result.put("chainNode", chainNode);
+        result.put("feignNode", feignNode);
+        String jsonString = JSON.toJSONString(result, JSONWriter.Feature.PrettyFormat, JSONWriter.Feature.WriteNullListAsEmpty);
+        System.out.println(jsonString);
+    }
+
+    private void buildFeignData(Map<String, List<Node>> feignNode) throws IOException, ClassNotFoundException, NoSuchFieldException, IllegalAccessException {
         Class<? extends Annotation> feignClass = null;
         try {
             feignClass = (Class<? extends Annotation>) Class.forName(FEIGN_ANNO_PATH.replaceAll("/", "\\."));
@@ -69,14 +94,14 @@ public class Fizz {
                     Iterator<Class<?>> iterator = classes.iterator();
                     while (iterator.hasNext()) {
                         Class<?> clz = iterator.next();
-                        if(clz.isInterface()){
+                        if (clz.isInterface()) {
                             iterator.remove();
-                        }else{
+                        } else {
                             Annotation annotation = clz.getAnnotation(feignClass);
                             Class<? extends Annotation> aClass = annotation.getClass();
                             Field fallbackFactory = aClass.getField("fallbackFactory");
-                            Class<?> fallbackCalss = (Class<?>) fallbackFactory.get(annotation);
-                            if (fallbackCalss == feignClass){
+                            Class<?> fallbackClass = (Class<?>) fallbackFactory.get(annotation);
+                            if (fallbackClass == feignClass) {
                                 iterator.remove();
                             }
                         }
@@ -86,14 +111,6 @@ public class Fizz {
                 feignNode.put(interfaceClass.getName(), nodes);
             }
         }
-        Class<? extends Annotation> aClass = (Class<? extends Annotation>) Class.forName(annotationClass);
-        Set<Class<?>> classes = searchClassByAnnotation(aClass);
-        List<Node> chainNode = buildChain(classes);
-        HashMap result = new HashMap();
-        result.put("chainNode", chainNode);
-        result.put("feignNode", feignNode);
-        String jsonString = JSON.toJSONString(result, JSONWriter.Feature.PrettyFormat, JSONWriter.Feature.WriteNullListAsEmpty);
-        System.out.println(jsonString);
     }
 
     private boolean startWithPackages(String path) {
@@ -147,11 +164,16 @@ public class Fizz {
         final ClassMetadata classMetadata = new ClassMetadata();
         classMetadata.setName(cname);
         CACHE_CLASSES.put(cname, classMetadata);
-        InputStream classInputStream = LoadJarClassUtil.getClassInputStream(cname);
-        if (classInputStream == null) {
-            return;
+        ClassReader classReader;
+        if (jarPath == null) {
+            classReader = new ClassReader(cname);
+        } else {
+            InputStream classInputStream = LoadJarClassUtil.getClassInputStream(cname);
+            if (classInputStream == null) {
+                return;
+            }
+            classReader = new ClassReader(classInputStream);
         }
-        ClassReader classReader = new ClassReader(classInputStream);
         Map<String, Map<String, Integer>> methodLineMap = new HashMap<>();
         AtomicReference<String> tempMethodNameAndParam = new AtomicReference<>("");
         AtomicInteger beforeLastLine = new AtomicInteger(0);
@@ -257,23 +279,6 @@ public class Fizz {
         }, ClassReader.EXPAND_FRAMES);
     }
 
-    private InputStream getClassInJar(String className) throws IOException {
-        try {
-            className = className.replaceAll("\\.", "/") + ".class";
-            JarFile jarFile = new JarFile(jarpath); // 替换为实际的jar文件名
-            Enumeration<JarEntry> entries = jarFile.entries();
-            while (entries.hasMoreElements()) {
-                JarEntry entry = entries.nextElement();
-                if (entry.getName().equals(className)) {
-                    return jarFile.getInputStream(entry);
-                }
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
-
     private void loadTrace(String className, String methodName, String methodParam, MethodMetadata methodMetadata, String cname, String cMethod, String cDescriptor) throws Exception {
         if (className == null) {
             return;
@@ -314,6 +319,10 @@ public class Fizz {
             }
             chains.add(node);
             node.setFeign(classMetadata.isFeign());
+            if (annotationMetadata.containsKey(cname)) {
+                Map<String, String> annotationData = annotationMetadata.get(cname);
+                node.setAnnotationMetadata(annotationData);
+            }
             String temp = cname.replaceAll("\\.", "/") + "#" + methodName + "#" + method.getParam();
             if (alreadyInvoke.contains(temp)) {
                 node.setCycle(temp);
@@ -377,6 +386,25 @@ public class Fizz {
                     drawTrace(dataMethod.getTraces(), childNode, alreadyInvoke);
                 }
             }
+        }
+    }
+
+    private void parseAnnotationMetadata(Class markClass, Set<Class<?>> tempMarkClasses) throws InvocationTargetException, IllegalAccessException {
+        for (Class<?> tempMarkClass : tempMarkClasses) {
+            Annotation annotation = tempMarkClass.getAnnotation(markClass);
+            Method[] methods = annotation.annotationType().getMethods();
+            Map<String, String> metadata = new HashMap<>();
+            for (Method method : methods) {
+                if (method.getName().equals("equals") ||
+                        method.getName().equals("hashCode") ||
+                        method.getName().equals("toString") ||
+                        method.getName().equals("annotationType")) {
+                } else {
+                    Object value = method.invoke(annotation);
+                    metadata.put(method.getName(), value.toString());
+                }
+            }
+            annotationMetadata.put(tempMarkClass.getName(), metadata);
         }
     }
 
@@ -493,12 +521,13 @@ public class Fizz {
         }
     }
 
-    @JSONType(orders = {"name", "cycle", "feign", "children"})
+    @JSONType(orders = {"name", "cycle", "feign", "children", "annotationMetadata"})
     static class Node {
         private String name;
         private boolean feign;
         private List<Node> children;
         private String cycle;
+        private Map<String, String> annotationMetadata;
 
         public String getName() {
             return name;
@@ -537,6 +566,14 @@ public class Fizz {
 
         public void setCycle(String cycle) {
             this.cycle = cycle;
+        }
+
+        public Map<String, String> getAnnotationMetadata() {
+            return annotationMetadata;
+        }
+
+        public void setAnnotationMetadata(Map<String, String> annotationMetadata) {
+            this.annotationMetadata = annotationMetadata;
         }
     }
 

@@ -1,12 +1,11 @@
 package com.dahuaboke.plugins;
 
 
-
 import java.io.IOException;
 
 public class Demo {
 
-    public static void main(String[] args){
+    public static void main(String[] args) {
         //后续可以基于此名称进行相关操作，比如文件查找、验证等
         System.out.println("执行了fizz方法,start");
 //        String jarpath = "C:/Users/23195/Desktop/ttt/general-main/mvc/target/mvc.jar";
@@ -16,7 +15,7 @@ public class Demo {
         String annotationClass = "com.dahuaboke.javaparser.annotation.ValidComponent";
         String[] packages = {"com/dahuaboke"};
         try {
-            new Fizz(jarpath,annotationClass,packages,null).run();
+            new Fizz(null, annotationClass, null, packages, null).run();
         } catch (IOException e) {
             System.out.println(e);
         } catch (ClassNotFoundException e) {

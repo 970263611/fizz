@@ -17,7 +17,10 @@ public class FizzMojo extends AbstractMojo {
     private MavenProject project;
 
     @Parameter(required = true)
-    private String annotationClass;
+    private String search;
+
+    @Parameter(required = true)
+    private String[] marks;
 
     @Parameter
     private String[] packages;
@@ -30,7 +33,7 @@ public class FizzMojo extends AbstractMojo {
         String jarpath = project.getBuild().getDirectory() + "/" + project.getBuild().getFinalName() + ".jar";
         System.out.println("打包后的jar文件路径: " + jarpath);
         try {
-            new Fizz(jarpath, annotationClass, packages, log).run();
+            new Fizz(jarpath, search, marks, packages, log).run();
         } catch (IOException e) {
             log.error(e);
         } catch (ClassNotFoundException e) {
