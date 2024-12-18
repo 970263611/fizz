@@ -11,7 +11,6 @@ import org.reflections.util.ConfigurationBuilder;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.annotation.Annotation;
-import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
@@ -81,7 +80,7 @@ public class Fizz {
         System.out.println(jsonString);
     }
 
-    private void buildFeignData(Map<String, List<Node>> feignNode) throws IOException, ClassNotFoundException, NoSuchFieldException, IllegalAccessException {
+    private void buildFeignData(Map<String, List<Node>> feignNode) throws IOException, ClassNotFoundException, NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
         Class<? extends Annotation> feignClass = null;
         try {
             feignClass = (Class<? extends Annotation>) Class.forName(FEIGN_ANNO_PATH.replaceAll("/", "\\."));
@@ -89,30 +88,27 @@ public class Fizz {
         }
         if (feignClass != null) {
             Set<Class<?>> interfaceClasses = searchClassByAnnotation(feignClass);
+            Set<Class<?>> excludeClass = new HashSet<>();
             if (!interfaceClasses.isEmpty()) {
                 for (Class<?> clz : interfaceClasses) {
-                    FEIGN_CLASSNAMES.add(clz.getName().replaceAll("\\.", "/"));
-                }
-            }
-            for (Class<?> interfaceClass : interfaceClasses) {
-                Set<Class<?>> classes = searchClassByInterface(interfaceClass);
-                if (!classes.isEmpty()) {
-                    Iterator<Class<?>> iterator = classes.iterator();
-                    while (iterator.hasNext()) {
-                        Class<?> clz = iterator.next();
-                        if (clz.isInterface()) {
-                            iterator.remove();
-                        } else {
-                            Annotation annotation = clz.getAnnotation(feignClass);
-                            Class<? extends Annotation> aClass = annotation.getClass();
-                            Field fallbackFactory = aClass.getField("fallbackFactory");
-                            Class<?> fallbackClass = (Class<?>) fallbackFactory.get(annotation);
-                            if (fallbackClass == feignClass) {
-                                iterator.remove();
+                    if(clz.isInterface()) {
+                        FEIGN_CLASSNAMES.add(clz.getName().replaceAll("\\.", "/"));
+                        Annotation annotation = clz.getAnnotation(feignClass);
+                        if (annotation != null) {
+                            Method fallbackFactoryMethod = annotation.annotationType().getDeclaredMethod("fallbackFactory");
+                            fallbackFactoryMethod.setAccessible(true);
+                            Object obj =  fallbackFactoryMethod.invoke(annotation);
+                            if(obj != null) {
+                                Class<?> fallbackClass = (Class<?>)obj;
+                                excludeClass.add(fallbackClass);
                             }
                         }
                     }
                 }
+            }
+            for (Class<?> interfaceClass : interfaceClasses) {
+                Set<Class<?>> classes = searchClassByInterface(interfaceClass);
+                classes.removeAll(excludeClass);
                 List<Node> nodes = buildChain(classes);
                 feignNode.put(interfaceClass.getName(), nodes);
             }
