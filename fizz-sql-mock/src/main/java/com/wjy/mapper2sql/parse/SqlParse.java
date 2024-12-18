@@ -87,10 +87,10 @@ public class SqlParse {
                     }
                 }
             } catch (Exception e) {
-                e.printStackTrace();
+                //TODO e.printStackTrace();
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            //TODO e.printStackTrace();
         }
         return resultMappingList;
     }
@@ -154,7 +154,7 @@ public class SqlParse {
         } catch (NoSuchFieldException e) {
             // ignore
         } catch (Exception e) {
-            e.printStackTrace();
+            //TODO e.printStackTrace();
         }
         return sqlNode;
     }

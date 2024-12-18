@@ -10,9 +10,6 @@ public class FilesWriter implements Writer{
     @Override
     public boolean write(String path, String message) throws IOException {
         File file = new File(path);
-        if(!file.canWrite()){
-            throw new IOException("Cannot write file " + path);
-        }
         BufferedWriter writer = new BufferedWriter(new FileWriter(file));
         writer.write(message);
         writer.flush();

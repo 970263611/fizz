@@ -42,12 +42,6 @@
             <groupId>com.github.jsqlparser</groupId>
             <artifactId>jsqlparser</artifactId>
         </dependency>
-
-        <dependency>
-            <groupId>com.dahuaboke</groupId>
-            <artifactId>fizz-test</artifactId>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>

@@ -36,7 +36,7 @@ public class JSQLParserExample {
                 }
             }
         } catch (JSQLParserException e) {
-            e.printStackTrace();
+            //TODO e.printStackTrace();
         }
         return tableNames;
     }
