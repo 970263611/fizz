@@ -19,6 +19,7 @@
         <module>maven-fizz-plugin</module>
         <module>fizz-sql-mock</module>
         <module>fizz-web</module>
+        <module>fizz-test</module>
     </modules>
 
     <properties>
@@ -49,6 +50,12 @@
             <dependency>
                 <groupId>com.dahuaboke</groupId>
                 <artifactId>fizz-util</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.dahuaboke</groupId>
+                <artifactId>fizz-test</artifactId>
                 <version>${revision}</version>
             </dependency>
 

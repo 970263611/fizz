@@ -1,4 +1,4 @@
-package com.dahuaboke.test;
+package com.dahuaboke.demo.test;
 
 public class Test4 {
 

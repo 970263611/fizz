@@ -1,4 +1,4 @@
-package com.dahuaboke.util;
+package com.dahuaboke.fizz.util;
 
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;

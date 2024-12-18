@@ -1,10 +1,7 @@
-package com.dahuaboke.test;
+package com.dahuaboke.demo.test;
 
-import java.io.File;
-import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.jar.JarFile;
 
 public class Demo {
 

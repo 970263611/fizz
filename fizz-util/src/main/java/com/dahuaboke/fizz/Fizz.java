@@ -3,7 +3,7 @@ package com.dahuaboke.fizz;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.annotation.JSONType;
-import com.dahuaboke.util.LoadJarClassUtil;
+import com.dahuaboke.fizz.util.LoadJarClassUtil;
 import org.objectweb.asm.*;
 import org.reflections.Reflections;
 import org.reflections.util.ConfigurationBuilder;

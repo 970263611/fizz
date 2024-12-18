@@ -1,4 +1,4 @@
-package com.dahuaboke.util;
+package com.dahuaboke.fizz.util;
 
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;

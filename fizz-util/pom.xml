@@ -42,6 +42,31 @@
             <groupId>com.github.jsqlparser</groupId>
             <artifactId>jsqlparser</artifactId>
         </dependency>
+
+        <dependency>
+            <groupId>com.dahuaboke</groupId>
+            <artifactId>fizz-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <!-- 在这里指定main入口类 -->
+                    <mainClass>com.dahuaboke.fizz.DoFizz</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

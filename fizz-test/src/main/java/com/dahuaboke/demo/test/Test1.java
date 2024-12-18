@@ -1,4 +1,4 @@
-package com.dahuaboke.test;
+package com.dahuaboke.demo.test;
 
 import com.dahuaboke.javaparser.annotation.ValidComponent;
 

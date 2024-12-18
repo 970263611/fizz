@@ -1,4 +1,4 @@
-package com.dahuaboke.javaparser.annotation;
+package com.dahuaboke.demo.annotation;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

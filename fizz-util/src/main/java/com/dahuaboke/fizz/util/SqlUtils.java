@@ -1,4 +1,4 @@
-package com.dahuaboke.util;
+package com.dahuaboke.fizz.util;
 
 import com.alibaba.druid.DbType;
 import com.wjy.mapper2sql.SqlUtil;

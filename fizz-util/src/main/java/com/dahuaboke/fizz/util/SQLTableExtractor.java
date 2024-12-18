@@ -1,4 +1,4 @@
-package com.dahuaboke.util;
+package com.dahuaboke.fizz.util;
 
 import java.util.ArrayList;
 import java.util.List;
