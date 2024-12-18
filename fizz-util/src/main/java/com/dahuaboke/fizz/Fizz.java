@@ -3,7 +3,10 @@ package com.dahuaboke.fizz;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.annotation.JSONType;
+import com.dahuaboke.fizz.io.FilesWriter;
+import com.dahuaboke.fizz.io.Writer;
 import com.dahuaboke.fizz.util.LoadJarClassUtil;
+import com.dahuaboke.fizz.util.SqlUtils;
 import org.objectweb.asm.*;
 import org.reflections.Reflections;
 import org.reflections.util.ConfigurationBuilder;
@@ -45,19 +48,23 @@ public class Fizz {
         this.search = search;
         this.marks = marks;
         this.packages = packages;
-        ConfigurationBuilder builder;
+        ConfigurationBuilder builder = new ConfigurationBuilder();
         if (jarPath != null) {
-            builder = new ConfigurationBuilder();
             URLClassLoader classloader = LoadJarClassUtil.getClassloader(packages, jarPath);
             builder.addClassLoaders(classloader);
             builder.setUrls(new URL("file:" + jarPath));
-        } else {
-            builder = new ConfigurationBuilder().forPackages(packages);
+
         }
+        builder.forPackages(packages);
         this.reflections = new Reflections(builder);
     }
 
-    public void run() throws Exception {
+    public String run() throws Exception {
+        Map<String, Set<String>> mapperSql = new HashMap<>();
+        try {
+            mapperSql = SqlUtils.findTableNameInJar(jarPath);
+        } catch (Exception e) {
+        }
         Map<String, List<Node>> feignNode = new HashMap<>();
         buildFeignData(feignNode);
         Class<? extends Annotation> aClass = (Class<? extends Annotation>) Class.forName(search);
@@ -77,8 +84,7 @@ public class Fizz {
         result.put("version", version);
         result.put("chainNode", chainNode);
         result.put("feignNode", feignNode);
-        String jsonString = JSON.toJSONString(result, JSONWriter.Feature.PrettyFormat, JSONWriter.Feature.WriteNullListAsEmpty);
-        System.out.println(jsonString);
+        return JSON.toJSONString(result, JSONWriter.Feature.PrettyFormat, JSONWriter.Feature.WriteNullListAsEmpty);
     }
 
     private void buildFeignData(Map<String, List<Node>> feignNode) throws IOException, ClassNotFoundException, NoSuchFieldException, IllegalAccessException {
@@ -104,11 +110,13 @@ public class Fizz {
                             iterator.remove();
                         } else {
                             Annotation annotation = clz.getAnnotation(feignClass);
-                            Class<? extends Annotation> aClass = annotation.getClass();
-                            Field fallbackFactory = aClass.getField("fallbackFactory");
-                            Class<?> fallbackClass = (Class<?>) fallbackFactory.get(annotation);
-                            if (fallbackClass == feignClass) {
-                                iterator.remove();
+                            if (annotation != null) {
+                                Class<? extends Annotation> aClass = annotation.getClass();
+                                Field fallbackFactory = aClass.getField("fallbackFactory");
+                                Class<?> fallbackClass = (Class<?>) fallbackFactory.get(annotation);
+                                if (fallbackClass == feignClass) {
+                                    iterator.remove();
+                                }
                             }
                         }
                     }
@@ -268,9 +276,11 @@ public class Fizz {
                                     }
                                 }
                                 if (isInterface) {
-                                    if (!FEIGN_CLASSNAMES.contains(owner)) {
+                                    if (isInterface && !FEIGN_CLASSNAMES.contains(owner)) {
                                         String implementClassNameByInterface = interfaceHandler.findImplementClassNameByInterface(owner.replaceAll("/", "\\."));
                                         loadTrace(implementClassNameByInterface, name, descriptor, methodMetadata.get(), cname, finalCMethod.get(), finalCDescriptor.get());
+                                    } else {
+                                        loadTrace(owner, name, descriptor, methodMetadata.get(), cname, finalCMethod.get(), finalCDescriptor.get());
                                     }
                                 } else {
                                     loadTrace(owner, name, descriptor, methodMetadata.get(), cname, finalCMethod.get(), finalCDescriptor.get());
@@ -358,14 +368,16 @@ public class Fizz {
                     }
                 }
                 drawTrace(distinctTraces, node, alreadyInvoke);
+            } else {
+                if (classMetadata.isMapper) {
+                    //TODO
+                    node.setTables(null);
+                }
             }
         }
     }
 
     private void drawTrace(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke) {
-        if (traces == null) {
-            return;
-        }
         for (TraceMetadata trace : traces) {
             String className = trace.getClassName();
             String methodName = trace.getMethodName();
@@ -389,7 +401,16 @@ public class Fizz {
                 String name = dataMethod.getName();
                 String param = dataMethod.getParam();
                 if (methodName.equals(name) && methodParam.equals(param)) {
-                    drawTrace(dataMethod.getTraces(), childNode, alreadyInvoke);
+                    List<TraceMetadata> childTraces = dataMethod.getTraces();
+                    if (childTraces == null) {
+                        if (classMetadata.isMapper) {
+                            //TODO
+                            childNode.setTables(null);
+                        }
+                        return;
+                    } else {
+                        drawTrace(childTraces, childNode, alreadyInvoke);
+                    }
                 }
             }
         }
@@ -528,12 +549,13 @@ public class Fizz {
     }
 
     @JSONType(orders = {"name", "cycle", "feign", "children", "annotationMetadata"})
-    static class Node {
+    public class Node {
         private String name;
         private boolean feign;
         private List<Node> children;
         private String cycle;
         private Map<String, String> annotationMetadata;
+        private List<String> tables;
 
         public String getName() {
             return name;
@@ -581,6 +603,14 @@ public class Fizz {
         public void setAnnotationMetadata(Map<String, String> annotationMetadata) {
             this.annotationMetadata = annotationMetadata;
         }
+
+        public List<String> getTables() {
+            return tables;
+        }
+
+        public void setTables(List<String> tables) {
+            this.tables = tables;
+        }
     }
 
     interface InterfaceHandler {
@@ -596,17 +626,6 @@ public class Fizz {
                 return new ArrayList<>(classes).get(0).getName();
             }
             return null;
-        }
-    }
-
-    interface Writer {
-        boolean write(String path, String message);
-    }
-
-    private class FileWriter implements Writer {
-        @Override
-        public boolean write(String path, String message) {
-            return false;
         }
     }
 }

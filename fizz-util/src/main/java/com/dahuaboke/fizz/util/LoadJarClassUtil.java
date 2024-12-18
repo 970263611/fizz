@@ -210,7 +210,7 @@ public final class LoadJarClassUtil {
         }
 
         // 加载BOOT-INF/lib/下的.jar
-        classInstanceSet.addAll(loadNormalJar(new ArrayList<>(bootLibSet), false, includePrefixSet, excludePrefixSet));
+        classInstanceSet.addAll(loadNormalJar(new ArrayList<>(bootLibSet), true, includePrefixSet, excludePrefixSet));
         // 加载BOOT-INF/classes/下的.class
         bootClassRootDirSet.forEach(bootClassRootDir -> {
             Set<File> tmpSet = new HashSet<>();
@@ -334,7 +334,6 @@ public final class LoadJarClassUtil {
         try {
             instance = Class.forName(classLongName);
         } catch (Throwable e) {
-            e.printStackTrace();
         }
         return instance;
     }
