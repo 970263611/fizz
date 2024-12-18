@@ -15,11 +15,7 @@ public class DoFizz {
         String annotationClass = "com.dahuaboke.javaparser.annotation.ValidComponent";
         String[] packages = {"com.dahuaboke"};
         try {
-<<<<<<< Updated upstream:fizz-util/src/main/java/com/dahuaboke/fizz/DoFizz.java
-            new Fizz(null, annotationClass, null, packages).run();
-=======
-            new Fizz("ifund", "1.0.0", null, annotationClass, null, packages, null).run();
->>>>>>> Stashed changes:src/main/java/com/dahuaboke/plugins/Demo.java
+            new Fizz("ifund", "1.0.0", null, annotationClass, null, packages).run();
         } catch (IOException e) {
             System.out.println(e);
         } catch (ClassNotFoundException e) {

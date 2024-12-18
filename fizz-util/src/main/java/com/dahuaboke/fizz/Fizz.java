@@ -38,13 +38,9 @@ public class Fizz {
     private String project;
     private String version;
 
-<<<<<<< Updated upstream:fizz-util/src/main/java/com/dahuaboke/fizz/Fizz.java
-    public Fizz(String jarPath, String search, String[] marks, String[] packages) throws MalformedURLException, ClassNotFoundException {
-=======
-    public Fizz(String project, String version, String jarPath, String search, String[] marks, String[] packages, Log log) throws MalformedURLException, ClassNotFoundException {
+    public Fizz(String project, String version, String jarPath, String search, String[] marks, String[] packages) throws MalformedURLException, ClassNotFoundException {
         this.project = project;
         this.version = version;
->>>>>>> Stashed changes:src/main/java/com/dahuaboke/plugins/Fizz.java
         this.jarPath = jarPath;
         this.search = search;
         this.marks = marks;
@@ -608,7 +604,6 @@ public class Fizz {
     }
 
     private class FileWriter implements Writer {
-
         @Override
         public boolean write(String path, String message) {
             return false;
