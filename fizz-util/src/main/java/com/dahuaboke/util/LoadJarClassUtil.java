@@ -679,7 +679,6 @@ public final class LoadJarClassUtil {
         Set<String> includePrefixSet = new HashSet<>();
         List<String> p = new ArrayList<>();
         for (String s : packages) {
-            s = s.replaceAll("/", ".");
             p.add(s);
         }
         includePrefixSet.addAll(p);

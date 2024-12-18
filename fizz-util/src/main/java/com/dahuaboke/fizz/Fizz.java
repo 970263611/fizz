@@ -35,8 +35,16 @@ public class Fizz {
     private Set<String> FEIGN_CLASSNAMES = new HashSet<>();
     private InterfaceHandler interfaceHandler = new IFundInterfaceHandler();
     private Map<String, Map<String, String>> annotationMetadata = new HashMap<>();
+    private String project;
+    private String version;
 
+<<<<<<< Updated upstream:fizz-util/src/main/java/com/dahuaboke/fizz/Fizz.java
     public Fizz(String jarPath, String search, String[] marks, String[] packages) throws MalformedURLException, ClassNotFoundException {
+=======
+    public Fizz(String project, String version, String jarPath, String search, String[] marks, String[] packages, Log log) throws MalformedURLException, ClassNotFoundException {
+        this.project = project;
+        this.version = version;
+>>>>>>> Stashed changes:src/main/java/com/dahuaboke/plugins/Fizz.java
         this.jarPath = jarPath;
         this.search = search;
         this.marks = marks;
@@ -68,7 +76,9 @@ public class Fizz {
         } catch (Exception e) {
         }
         List<Node> chainNode = buildChain(classes);
-        HashMap result = new HashMap();
+        HashMap result = new LinkedHashMap();
+        result.put("project", project);
+        result.put("version", version);
         result.put("chainNode", chainNode);
         result.put("feignNode", feignNode);
         String jsonString = JSON.toJSONString(result, JSONWriter.Feature.PrettyFormat, JSONWriter.Feature.WriteNullListAsEmpty);
@@ -115,7 +125,7 @@ public class Fizz {
 
     private boolean startWithPackages(String path) {
         for (String pkg : packages) {
-            if (path.startsWith(pkg)) {
+            if (path.startsWith(pkg.replaceAll("\\.", "/"))) {
                 return true;
             }
         }
@@ -593,4 +603,15 @@ public class Fizz {
         }
     }
 
+    interface Writer {
+        boolean write(String path, String message);
+    }
+
+    private class FileWriter implements Writer {
+
+        @Override
+        public boolean write(String path, String message) {
+            return false;
+        }
+    }
 }

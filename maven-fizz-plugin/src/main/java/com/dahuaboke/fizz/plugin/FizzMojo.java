@@ -34,7 +34,11 @@ public class FizzMojo extends AbstractMojo {
         String jarpath = project.getBuild().getDirectory() + "/" + project.getBuild().getFinalName() + ".jar";
         System.out.println("打包后的jar文件路径: " + jarpath);
         try {
+<<<<<<< Updated upstream:maven-fizz-plugin/src/main/java/com/dahuaboke/fizz/plugin/FizzMojo.java
             new Fizz(jarpath, search, marks, packages).run();
+=======
+            new Fizz(null, null, jarpath, search, marks, packages, log).run();
+>>>>>>> Stashed changes:src/main/java/com/dahuaboke/plugins/FizzMojo.java
         } catch (IOException e) {
             log.error(e);
         } catch (ClassNotFoundException e) {
