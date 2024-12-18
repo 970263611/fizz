@@ -1,0 +1,16 @@
+server:
+  port: 29292
+
+spring:
+  application:
+    name: fizz
+  datasource:
+    url: jdbc:postgresql://localhost:15431/postgres
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
