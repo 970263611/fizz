@@ -64,7 +64,7 @@ public class Fizz {
             mapperSql = SqlUtils.findTableNameInJar(jarPath);
         } catch (Exception e) {
         }
-        Map<String, List<Node>> feignNode = new HashMap<>();
+        Map<String, Map<String, List<Node>>> feignNode = new HashMap<>();
         buildFeignData(feignNode);
         findMapper();
         Class<? extends Annotation> aClass = (Class<? extends Annotation>) Class.forName(search);
@@ -114,7 +114,7 @@ public class Fizz {
         }
     }
 
-    private void buildFeignData(Map<String, List<Node>> feignNode) throws IOException, ClassNotFoundException, NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
+    private void buildFeignData(Map<String, Map<String, List<Node>>> feignNode) throws IOException, ClassNotFoundException, NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
         Class<? extends Annotation> feignClass = null;
         try {
             feignClass = (Class<? extends Annotation>) Class.forName(FEIGN_ANNO_PATH.replaceAll("/", "\\."));
@@ -144,7 +144,7 @@ public class Fizz {
                 if (interfaceClass.isInterface()) {
                     Set<Class<?>> classes = searchClassByInterface(interfaceClass);
                     classes.removeAll(excludeClass);
-                    List<Node> nodes = buildFeign(classes);
+                    Map<String, List<Node>> nodes = buildChain(classes);
                     if (!nodes.isEmpty()) {
                         feignNode.put(interfaceClass.getName(), nodes);
                     }
@@ -195,20 +195,7 @@ public class Fizz {
         return chainMap;
     }
 
-    private List<Node> buildFeign(Set<Class<?>> classes) throws IOException, ClassNotFoundException {
-        for (Class<?> clz : classes) {
-            if (!clz.isInterface()) {
-                cache(clz.getName().replaceAll("\\.", "/"));
-            }
-        }
-        List<Node> chains = new ArrayList<>();
-        for (Class<?> clz : classes) {
-            draw(clz.getName(), chains);
-        }
-        return chains;
-    }
-
-    private void cache(String cname) throws IOException, ClassNotFoundException {
+    private void cache(String cname) throws IOException {
         if (!startWithPackages(cname)) {
             return;
         }
@@ -318,13 +305,16 @@ public class Fizz {
                                 }
                                 if (isInterface) {
                                     if (!FEIGN_CLASSNAMES.contains(owner) && !MAPPER_CLASSNAMES.contains(owner)) {
-                                        String implementClassNameByInterface = interfaceHandler.findImplementClassNameByInterface(owner.replaceAll("/", "\\."));
-                                        loadTrace(implementClassNameByInterface, name, descriptor, methodMetadata.get(), cname, finalCMethod.get(), finalCDescriptor.get());
+                                        Class<?> interfaceClassName = Class.forName(owner.replaceAll("/", "\\."));
+                                        Set<Class<?>> classes = searchClassByInterface(interfaceClassName);
+                                        for (Class<?> c : classes) {
+                                            loadTrace(c.getName(), name, descriptor, methodMetadata.get(), cname, finalCMethod.get(), finalCDescriptor.get(), true);
+                                        }
                                     } else if (FEIGN_CLASSNAMES.contains(owner) || MAPPER_CLASSNAMES.contains(owner)) {
-                                        loadTrace(owner, name, descriptor, methodMetadata.get(), cname, finalCMethod.get(), finalCDescriptor.get());
+                                        loadTrace(owner, name, descriptor, methodMetadata.get(), cname, finalCMethod.get(), finalCDescriptor.get(), false);
                                     }
                                 } else {
-                                    loadTrace(owner, name, descriptor, methodMetadata.get(), cname, finalCMethod.get(), finalCDescriptor.get());
+                                    loadTrace(owner, name, descriptor, methodMetadata.get(), cname, finalCMethod.get(), finalCDescriptor.get(), false);
                                 }
                             } catch (Exception e) {
                                 throw new RuntimeException(e);
@@ -336,7 +326,7 @@ public class Fizz {
         }, ClassReader.EXPAND_FRAMES);
     }
 
-    private void loadTrace(String className, String methodName, String methodParam, MethodMetadata methodMetadata, String cname, String cMethod, String cDescriptor) throws Exception {
+    private void loadTrace(String className, String methodName, String methodParam, MethodMetadata methodMetadata, String cname, String cMethod, String cDescriptor, boolean isInterface) throws Exception {
         if (className == null) {
             return;
         }
@@ -348,7 +338,11 @@ public class Fizz {
             traceMetadata.setClassName(className);
             traceMetadata.setMethodName(methodName);
             traceMetadata.setMethodParam(methodParam);
-            methodMetadata.setTrace(traceMetadata);
+            if (isInterface) {
+                methodMetadata.setInterfaceTrace(traceMetadata);
+            } else {
+                methodMetadata.setTrace(traceMetadata);
+            }
             try {
                 cache(className);
             } catch (IOException e) {
@@ -390,37 +384,47 @@ public class Fizz {
             alreadyInvoke.add(temp);
             List<TraceMetadata> traces = method.getTraces();
             if (traces != null) {
-                List<TraceMetadata> distinctTraces = new ArrayList<>();
-                for (TraceMetadata trace : traces) {
-                    boolean has = false;
-                    String c1 = trace.getClassName();
-                    String m1 = trace.getMethodName();
-                    String p1 = trace.getMethodParam();
-                    for (TraceMetadata distinctTrace : distinctTraces) {
-                        String c2 = distinctTrace.getClassName();
-                        String m2 = distinctTrace.getMethodName();
-                        String p2 = distinctTrace.getMethodParam();
-                        if (c1.equals(c2) && m1.equals(m2) && p1.equals(p2)) {
-                            has = true;
-                            break;
-                        }
-                    }
-                    if (!has) {
-                        distinctTraces.add(trace);
-                    }
-                }
-                drawTrace(distinctTraces, node, alreadyInvoke);
+                drawTraces(traces, node, alreadyInvoke, false, null);
             } else {
                 if (classMetadata.isMapper()) {
                     String classN = classMetadata.getName();
                     String methodN = method.getName();
                     node.setTables(mapperSql.get(classN + "\\." + methodN));
                 }
+                Map<String, List<TraceMetadata>> interfaceTraces = method.getInterfaceTraces();
+                if (!interfaceTraces.isEmpty()) {
+                    interfaceTraces.forEach((k, v) -> {
+                        drawTraces(v, node, alreadyInvoke, true, k);
+                    });
+                }
             }
         }
     }
 
-    private void drawTrace(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke) {
+    private void drawTraces(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke, boolean isInterface, String k) {
+        List<TraceMetadata> distinctTraces = new ArrayList<>();
+        for (TraceMetadata trace : traces) {
+            boolean has = false;
+            String c1 = trace.getClassName();
+            String m1 = trace.getMethodName();
+            String p1 = trace.getMethodParam();
+            for (TraceMetadata distinctTrace : distinctTraces) {
+                String c2 = distinctTrace.getClassName();
+                String m2 = distinctTrace.getMethodName();
+                String p2 = distinctTrace.getMethodParam();
+                if (c1.equals(c2) && m1.equals(m2) && p1.equals(p2)) {
+                    has = true;
+                    break;
+                }
+            }
+            if (!has) {
+                distinctTraces.add(trace);
+            }
+        }
+        drawTrace(distinctTraces, node, alreadyInvoke, isInterface, k);
+    }
+
+    private void drawTrace(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke, boolean isInterface, String k) {
         for (TraceMetadata trace : traces) {
             String className = trace.getClassName();
             String methodName = trace.getMethodName();
@@ -436,7 +440,11 @@ public class Fizz {
             childNode.setMapper(classMetadata.isMapper());
             childNode.setName(temp);
             alreadyInvoke.add(temp);
-            node.setChildren(childNode);
+            if (isInterface) {
+                node.setInterfaceChildren(k, childNode);
+            } else {
+                node.setChildren(childNode);
+            }
             List<MethodMetadata> methods = classMetadata.getMethods();
             if (methods == null) {
                 continue;
@@ -453,7 +461,7 @@ public class Fizz {
                             childNode.setTables(mapperSql.get(classN.replaceAll("/", "\\.") + "." + methodN));
                         }
                     } else {
-                        drawTrace(childTraces, childNode, alreadyInvoke);
+                        drawTrace(childTraces, childNode, alreadyInvoke, isInterface, k);
                     }
                 }
             }
@@ -529,6 +537,7 @@ public class Fizz {
         private String name;
         private String param;
         private List<TraceMetadata> traces;
+        private Map<String, List<TraceMetadata>> interfaceTraces;
 
         public String getName() {
             return name;
@@ -559,6 +568,28 @@ public class Fizz {
                 this.traces = new LinkedList<>();
             }
             this.traces.add(trace);
+        }
+
+        public Map<String, List<TraceMetadata>> getInterfaceTraces() {
+            return interfaceTraces;
+        }
+
+        public void setInterfaceTraces(Map<String, List<TraceMetadata>> interfaceTraces) {
+            this.interfaceTraces = interfaceTraces;
+        }
+
+        public void setInterfaceTrace(TraceMetadata data) {
+            String key = data.getClassName();
+            if (this.interfaceTraces != null && this.interfaceTraces.containsKey(key)) {
+                List<TraceMetadata> traceMetadata = this.interfaceTraces.get(key);
+                traceMetadata.add(data);
+            } else {
+                this.interfaceTraces = new LinkedHashMap() {{
+                    put(key, new ArrayList<TraceMetadata>() {{
+                        add(data);
+                    }});
+                }};
+            }
         }
     }
 
@@ -598,6 +629,7 @@ public class Fizz {
         private boolean feign;
         private boolean mapper;
         private List<Node> children;
+        private Map<String, List<Node>> interfaceChildren;
         private String cycle;
         private Map<String, String> annotationMetadata;
         private Set<String> tables;
@@ -663,6 +695,27 @@ public class Fizz {
 
         public void setMapper(boolean mapper) {
             this.mapper = mapper;
+        }
+
+        public Map<String, List<Node>> getInterfaceChildren() {
+            return interfaceChildren;
+        }
+
+        public void setInterfaceChildren(Map<String, List<Node>> interfaceChildren) {
+            this.interfaceChildren = interfaceChildren;
+        }
+
+        public void setInterfaceChildren(String key, Node node) {
+            if (this.interfaceChildren != null && this.interfaceChildren.containsKey(key)) {
+                List<Node> nodeList = this.interfaceChildren.get(key);
+                nodeList.add(node);
+            } else {
+                this.interfaceChildren = new LinkedHashMap() {{
+                    put(key, new ArrayList<Node>() {{
+                        add(node);
+                    }});
+                }};
+            }
         }
     }
 
