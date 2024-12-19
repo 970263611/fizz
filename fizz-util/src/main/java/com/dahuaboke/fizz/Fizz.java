@@ -141,10 +141,14 @@ public class Fizz {
                 }
             }
             for (Class<?> interfaceClass : interfaceClasses) {
-                Set<Class<?>> classes = searchClassByInterface(interfaceClass);
-                classes.removeAll(excludeClass);
-                List<Node> nodes = buildFeign(classes);
-                feignNode.put(interfaceClass.getName(), nodes);
+                if (interfaceClass.isInterface()) {
+                    Set<Class<?>> classes = searchClassByInterface(interfaceClass);
+                    classes.removeAll(excludeClass);
+                    List<Node> nodes = buildFeign(classes);
+                    if (!nodes.isEmpty()) {
+                        feignNode.put(interfaceClass.getName(), nodes);
+                    }
+                }
             }
         }
     }

@@ -22,8 +22,8 @@ public class DoFizz {
         String finalFilePath = "C:\\Users\\dahua\\Desktop\\xc\\b.json";
         String jarPath = "C:\\Users\\dahua\\Documents\\WeChat Files\\dingweiqiang872226\\FileStorage\\File\\2024-12\\ifund-trade-deployment-project-0.0.1-SNAPSHOT.jar";
 //        String jarPath = "C:\\Users\\dahua\\Documents\\WeChat Files\\dingweiqiang872226\\FileStorage\\File\\2024-12\\nacostest-1.0-SNAPSHOT.jar";
-        String annotationClass = "com.psbc.otsp.base.trade.annotation.annotation.OtspService";
-//        String annotationClass = "com.psbc.otsp.base.trade.annotation.annotation.PluginComponent";
+//        String annotationClass = "com.psbc.otsp.base.trade.annotation.annotation.OtspService";
+        String annotationClass = "com.psbc.otsp.base.trade.annotation.annotation.PluginComponent";
 //        String annotationClass = "org.springframework.web.bind.annotation.RestController";
         String[] packages = {"com.dimple", "com.psbc"};
         try {
@@ -89,9 +89,7 @@ public class DoFizz {
                 String feignClassName = node.getName().split("#")[0].replaceAll("/", "\\.");
                 List<Fizz.Node> feignNodes = feignNode.get(feignClassName);
                 if (feignNodes != null) {
-                    Fizz.Node childNode = feignNodes.get(0);
-                    node.setName(childNode.getName());
-                    node.setChildren(childNode.getChildren());
+                    node.setChildren(feignNodes);
                 }
             } else {
                 List<Fizz.Node> children = node.getChildren();
