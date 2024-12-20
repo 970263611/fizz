@@ -4,6 +4,20 @@ import com.alibaba.druid.DbType;
 import com.wjy.mapper2sql.SqlUtil;
 import com.wjy.mapper2sql.bo.MapperSqlInfo;
 import com.wjy.mapper2sql.util.FileUtil;
+import net.sf.jsqlparser.JSQLParserException;
+import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.schema.Table;
+import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.delete.Delete;
+import net.sf.jsqlparser.statement.insert.Insert;
+import net.sf.jsqlparser.statement.select.FromItem;
+import net.sf.jsqlparser.statement.select.Join;
+import net.sf.jsqlparser.statement.select.PlainSelect;
+import net.sf.jsqlparser.statement.select.Select;
+import net.sf.jsqlparser.statement.update.Update;
+import net.sf.jsqlparser.util.deparser.ExpressionDeParser;
+import net.sf.jsqlparser.util.deparser.SelectDeParser;
+import net.sf.jsqlparser.util.deparser.UpdateDeParser;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -124,18 +138,37 @@ public class SqlUtils {
      * @param way 方式编号
      * @return 表名set
      */
-    public static Set<String> findTableNameInSql(String sql,int way){
+    public static Set<String> findTableNameInSql(String sql,int way) {
         Set<String> set = new HashSet<>();
         if(sql == null || sql.length() == 0){
             return set;
         }else{
             sql = sql.replace("?","''");
         }
-        List<String> tableNames;
+        List<String> tableNames = null;
         switch (way){
             case 0:
-                JSQLParserExample jsqlParserExample = new JSQLParserExample();
-                tableNames = jsqlParserExample.extractTableNames(sql);
+                try {
+                    Statement statement = CCJSqlParserUtil.parse(sql);
+                    if(statement instanceof Select){
+                        tableNames = extractSelectTableNames(sql);
+                    }else if(statement instanceof Update){
+                        Update update = (Update) statement;
+                        tableNames = new ArrayList(){{
+                            add(update.getTable().getName());
+                        }};
+                    }else if(statement instanceof Delete){
+                        Delete delete = (Delete) statement;
+                        tableNames = new ArrayList(){{
+                            add(delete.getTable().getName());
+                        }};
+                    }else if(statement instanceof Insert){
+                        Insert insert = (Insert) statement;
+                        tableNames = new ArrayList(){{
+                            add(insert.getTable().getName());
+                        }};
+                    }
+                }catch (Exception e){}
                 break;
             default:
                 tableNames = SQLTableExtractor.extractTableNames(sql);
@@ -170,6 +203,34 @@ public class SqlUtils {
         } catch (SecurityException e) {
             System.err.println("没有权限删除: " + folder.getAbsolutePath());
         }
+    }
+
+    public static List<String> extractSelectTableNames(String sql) {
+        List<String> tableNames = new ArrayList<>();
+        try {
+            Statement statement = CCJSqlParserUtil.parse(sql);
+            if (statement instanceof Select) {
+                Select select = (Select) statement;
+                PlainSelect plainSelect = (PlainSelect) select.getSelectBody();
+                FromItem fromItem = plainSelect.getFromItem();
+                if (fromItem instanceof Table) {
+                    Table table = (Table) fromItem;
+                    tableNames.add(table.getName());
+                }
+                List<Join> joins = plainSelect.getJoins();
+                if (joins != null) {
+                    for (Join join : joins) {
+                        if (join.getRightItem() instanceof Table) {
+                            Table table = (Table) join.getRightItem();
+                            tableNames.add(table.getName());
+                        }
+                    }
+                }
+            }
+        } catch (JSQLParserException e) {
+            //TODO e.printStackTrace();
+        }
+        return tableNames;
     }
 
 
@@ -218,7 +279,7 @@ public class SqlUtils {
                         //从sql中获取表名
                         Set<String> set = findTableNameInSql(sqlEntry.getValue(), 0);
                         //没获取到用另外一种方法尝试
-                        if (set == null) {
+                        if (set == null || set.size() == 0) {
                             set = findTableNameInSql(sqlEntry.getValue(), 1);
                         }
                         map.put(mapperSqlInfo.getNamespace() + "." + sqlEntry.getKey(), set);
@@ -241,10 +302,16 @@ public class SqlUtils {
     }
 
 
-    public static void main(String[] args) {
-        String jarFilePath = "C:\\Users\\23195\\Desktop\\ttt\\demojar\\demo.jar";
-        System.out.println(findTableNameInJar(jarFilePath));
-    }
+//    public static void main(String[] args) {
+//        String jarFilePath = "C:\\Users\\23195\\Desktop\\ttt\\demojar\\demo.jar";
+//        Map<String, Set<String>> tableNameInJar = findTableNameInJar(jarFilePath);
+//        tableNameInJar.forEach((k,v) -> {
+//            if(v.size() == 0) {
+//                System.out.println(k + "=" + v);
+//            }
+//        });
+////        findTableNameInJar(jarFilePath);
+//    }
 
 //    public static void main(String[] args) {
 //        String s = "C:\\Users\\23195\\Desktop\\ttt\\demojar\\tmp\\ifund-common-multi-datasource-0.0.1-SNAPSHOT.jar";
