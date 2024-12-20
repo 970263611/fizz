@@ -1,6 +1,10 @@
 package com.dahuaboke.fizz.util;
 
+import org.reflections.Reflections;
+import org.reflections.util.ConfigurationBuilder;
+
 import java.io.*;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
@@ -20,32 +24,48 @@ import java.util.zip.ZipFile;
 public final class LoadJarClassUtil {
 
     private static final String JAR_SUFFIX = ".jar";
-
     private static final int JAR_SUFFIX_LENGTH = ".jar".length();
-
     private static final String CLASS_SUFFIX = ".class";
-
     private static final String TMP_DIR_SUFFIX = "__temp__";
-
     private static final int CLASS_SUFFIX_LENGTH = CLASS_SUFFIX.length();
 
     /**
      * 添加资源的方法
      */
-    private static final Method ADD_URL_METHOD;
+    private Method addUrlMethod;
 
     /**
      * 类加载器
      */
-    private static final URLClassLoader CLASS_LOADER;
+    private URLClassLoader classLoader;
 
-    private static final Map<String, InputStream> CLASSES_FILE = new HashMap<>();
+    /**
+     * 类对应类文件流
+     */
+    private Map<String, InputStream> CLASSES_FILE = new HashMap<>();
 
-    static {
+    /**
+     * 实例化的类
+     */
+    private Set<Class<?>> classInstanceSet = new HashSet<>();
+
+    private String jarPath;
+
+    private String[] includePrefixArr;
+
+    private String[] excludePrefixArr;
+
+    public LoadJarClassUtil(String jarPath,String[] includePrefixArr,String[] excludePrefixArr){
         try {
-            ADD_URL_METHOD = URLClassLoader.class.getDeclaredMethod("addURL", URL.class);
-            ADD_URL_METHOD.setAccessible(true);
-            CLASS_LOADER = (URLClassLoader) ClassLoader.getSystemClassLoader();
+            addUrlMethod = URLClassLoader.class.getDeclaredMethod("addURL", URL.class);
+            addUrlMethod.setAccessible(true);
+            classLoader = (URLClassLoader) ClassLoader.getSystemClassLoader();
+            this.jarPath = jarPath;
+            this.includePrefixArr = includePrefixArr;
+            this.excludePrefixArr = excludePrefixArr;
+            loadJar(new File(jarPath),
+                    this.includePrefixArr == null ? null : Arrays.stream(includePrefixArr).collect(Collectors.toSet()),
+                    this.excludePrefixArr == null ? null : Arrays.stream(excludePrefixArr).collect(Collectors.toSet()));
         } catch (NoSuchMethodException e) {
             throw new RuntimeException(e);
         }
@@ -67,15 +87,9 @@ public final class LoadJarClassUtil {
      *                         注: excludePrefixSet优先级高于includePrefixSet。
      * @return 已加载了的class实例集合
      */
-    public static Set<Class<?>> loadJar(File jarOrDirFile,
+    public void loadJar(File jarOrDirFile,
                                         Set<String> includePrefixSet,
                                         Set<String> excludePrefixSet) {
-        Set<Class<?>> classInstanceSet = new HashSet<>();
-        if (jarOrDirFile == null || !jarOrDirFile.exists()) {
-            //System.out.println(("jarOrDirFile is null Or jarOrDirFile is non-exist.");
-            return classInstanceSet;
-        }
-
         List<File> jarFileList = IOUtil.listFileOnly(jarOrDirFile, JAR_SUFFIX);
         List<File> bootJarFileList = new ArrayList<>(16);
         List<File> normalJarFileList = new ArrayList<>(16);
@@ -88,7 +102,6 @@ public final class LoadJarClassUtil {
         });
         classInstanceSet.addAll(loadBootJar(bootJarFileList, includePrefixSet, excludePrefixSet));
         classInstanceSet.addAll(loadNormalJar(normalJarFileList, true, includePrefixSet, excludePrefixSet));
-        return classInstanceSet;
     }
 
     /**
@@ -107,7 +120,7 @@ public final class LoadJarClassUtil {
      *                                注: excludePrefixSet优先级高于includePrefixSet。
      * @return 已加载了的class实例集合
      */
-    public static Set<Class<?>> loadClass(Set<File> classLongNameRootDirSet,
+    public Set<Class<?>> loadClass(Set<File> classLongNameRootDirSet,
                                           Set<String> includePrefixSet,
                                           Set<String> excludePrefixSet) {
 
@@ -125,7 +138,7 @@ public final class LoadJarClassUtil {
         // 加载
         classLongNameRootDirSet.forEach(classLongNameRootDir -> {
             try {
-                ADD_URL_METHOD.invoke(CLASS_LOADER, classLongNameRootDir.toURI().toURL());
+                addUrlMethod.invoke(classLoader, classLongNameRootDir.toURI().toURL());
             } catch (IllegalAccessException | InvocationTargetException | MalformedURLException e) {
                 throw new RuntimeException(e);
             }
@@ -163,7 +176,7 @@ public final class LoadJarClassUtil {
         });
         // 转换为class实例
         return classLongNameSet.stream()
-                .map(LoadJarClassUtil::createClassInstance)
+                .map(this::createClassInstance)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
     }
@@ -183,7 +196,7 @@ public final class LoadJarClassUtil {
      *                         注: excludePrefixSet优先级高于includePrefixSet。
      * @return 已加载了的class文件全类名集合
      */
-    private static Set<Class<?>> loadBootJar(List<File> jarFileList,
+    private Set<Class<?>> loadBootJar(List<File> jarFileList,
                                              Set<String> includePrefixSet,
                                              Set<String> excludePrefixSet) {
         Set<Class<?>> classInstanceSet = new HashSet<>();
@@ -248,7 +261,7 @@ public final class LoadJarClassUtil {
      *                         注: excludePrefixSet优先级高于includePrefixSet。
      * @return 已加载了的class集合
      */
-    private static Set<Class<?>> loadNormalJar(List<File> jarFileList,
+    private Set<Class<?>> loadNormalJar(List<File> jarFileList,
                                                boolean instanceClass,
                                                Set<String> includePrefixSet,
                                                Set<String> excludePrefixSet) {
@@ -260,7 +273,7 @@ public final class LoadJarClassUtil {
         try {
             for (File jar : jarFileList) {
                 URL url = jar.toURI().toURL();
-                ADD_URL_METHOD.invoke(CLASS_LOADER, url);
+                addUrlMethod.invoke(classLoader, url);
                 if (!instanceClass) {
                     continue;
                 }
@@ -288,7 +301,7 @@ public final class LoadJarClassUtil {
                             }
                         }
                         try {
-                            CLASSES_FILE.put(classLongName, CLASS_LOADER.getResourceAsStream(zipEntryName));
+                            CLASSES_FILE.put(classLongName, classLoader.getResourceAsStream(zipEntryName));
                         } catch (Exception e) {
                         }
                         Class<?> instance = createClassInstance(classLongName);
@@ -311,7 +324,7 @@ public final class LoadJarClassUtil {
      *
      * @param jarFileList 要校验的jar文件
      */
-    private static void verifyJarFile(List<File> jarFileList) {
+    private void verifyJarFile(List<File> jarFileList) {
         Objects.requireNonNull(jarFileList, "jarFileList cannot be empty.");
         jarFileList.forEach(file -> {
             if (!file.exists()) {
@@ -329,7 +342,7 @@ public final class LoadJarClassUtil {
      * @param classLongName 全类名
      * @return class实例(注 : 当创建异常时 ， 返回null)
      */
-    private static Class<?> createClassInstance(String classLongName) {
+    private Class<?> createClassInstance(String classLongName) {
         Class<?> instance = null;
         try {
             instance = Class.forName(classLongName);
@@ -344,7 +357,7 @@ public final class LoadJarClassUtil {
      * @param jar 带判断的jar文件
      * @return true-是boot-jar, false-普通jar
      */
-    private static boolean isBootJar(File jar) {
+    private boolean isBootJar(File jar) {
         ZipFile zipFile = null;
         try {
             zipFile = new ZipFile(jar);
@@ -668,30 +681,85 @@ public final class LoadJarClassUtil {
         }
     }
 
-
-    /**
-     * 测试
-     *
-     * @return
-     */
-    public static URLClassLoader getClassloader(String[] packages, String jarPath) {
-        Set<String> includePrefixSet = new HashSet<>();
-        List<String> p = new ArrayList<>();
-        for (String s : packages) {
-            p.add(s);
-        }
-        includePrefixSet.addAll(p);
-        Set<String> excludePrefixSet = new HashSet<>();
-        excludePrefixSet.add("BOOT-INF.classes");
-        // 加载jar
-        loadJar(new File(jarPath),
-                includePrefixSet,
-                excludePrefixSet
-        );
-        return CLASS_LOADER;
-    }
-
-    public static InputStream getClassInputStream(String name) {
+    public InputStream getClassInputStream(String name) {
         return CLASSES_FILE.get(name.replaceAll("/", "\\."));
     }
+
+    public URLClassLoader getClassLoader() {
+        return classLoader;
+    }
+
+    /**
+     * 获取所有的Mapper
+     * @return
+     */
+    public Set<Class<?>> findMapperSet() {
+        Set<Class<?>> set = new HashSet<>();
+        //查找是否有mapperScan注解
+        Class<? extends Annotation> mapperScanAnno = null;
+        try {
+            mapperScanAnno = (Class<? extends Annotation>) classLoader.loadClass("org.mybatis.spring.annotation.MapperScan");
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        //如果有mapperScan注解，看看这个注解有没有被用到
+        Set<String> mapperPath = new HashSet<>();
+        if (mapperScanAnno != null) {
+            ConfigurationBuilder builder = new ConfigurationBuilder();
+            builder.addClassLoaders(this.classLoader);
+            if(this.includePrefixArr == null || includePrefixArr.length == 0){
+                builder.forPackages("/");
+            }else{
+                builder.forPackages(this.includePrefixArr);
+            }
+            Reflections reflections = new Reflections(builder);
+            Set<Class<?>> mapperScanList = reflections.getTypesAnnotatedWith(mapperScanAnno);
+            //如果mapperScan注解有被用到，获取mapperScan注解中的path，并放到mapperPath中
+            if (mapperScanList != null) {
+                for (Class<?> clz : mapperScanList) {
+                    Annotation annotation = clz.getAnnotation(mapperScanAnno);
+                    try {
+                        if (annotation != null) {
+                            Method value = annotation.annotationType().getDeclaredMethod("value");
+                            value.setAccessible(true);
+                            Object obj = value.invoke(annotation);
+                            if (obj != null) {
+                                String[] s = (String[]) obj;
+                                mapperPath.addAll(Arrays.stream(s).collect(Collectors.toSet()));
+                            }
+                        }
+                    }catch (Exception e) {}
+                }
+            }
+        }
+        //看看有没有mapper注解
+        Class<? extends Annotation> mapperAnno = null;
+        try {
+            mapperAnno = (Class<? extends Annotation>) classLoader.loadClass("org.apache.ibatis.annotations.Mapper");
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        //在实例化的范围内查找符合条件的mapper
+        for (Class<?> clz : classInstanceSet) {
+            //如果有mapperScan指定的路径，则路径下的接口都是mapper
+            if(mapperPath.size() > 0){
+                for (String p : mapperPath) {
+                    if(clz.getName().startsWith(p) && clz.isInterface()){
+                        set.add(clz);
+                        break;
+                    }
+                }
+            }
+            //或者直接声明Mapper的接口也算mapper
+            if(mapperAnno != null){
+                Annotation annotation = clz.getAnnotation(mapperAnno);
+                if(annotation != null && clz.isInterface()){
+                    set.add(clz);
+                }
+            }
+        }
+        return set;
+    }
+
+
 }

@@ -35,11 +35,13 @@ public class Fizz {
     private Map<String, ClassMetadata> CACHE_CLASSES = new HashMap<>();
     private Set<String> FEIGN_CLASSNAMES = new HashSet<>();
     private Set<String> MAPPER_CLASSNAMES = new HashSet<>();
+    private Set<Class<?>> MAPPER_CLASSES = new HashSet<>();
     private InterfaceHandler interfaceHandler = new IFundInterfaceHandler();
     private Map<String, Map<String, String>> annotationMetadata = new HashMap<>();
     private String project;
     private String version;
     private Map<String, Set<String>> mapperSql = new HashMap<>();
+    private LoadJarClassUtil loadJarClassUtil;
 
     public Fizz(String project, String version, String jarPath, String search, String[] marks, String[] packages) throws MalformedURLException, ClassNotFoundException {
         this.project = project;
@@ -48,12 +50,13 @@ public class Fizz {
         this.search = search;
         this.marks = marks;
         this.packages = packages;
+        this.loadJarClassUtil = new LoadJarClassUtil(jarPath,packages,null);
+        this.MAPPER_CLASSES = loadJarClassUtil.findMapperSet();
         ConfigurationBuilder builder = new ConfigurationBuilder();
         if (jarPath != null) {
-            URLClassLoader classloader = LoadJarClassUtil.getClassloader(packages, jarPath);
+            URLClassLoader classloader = loadJarClassUtil.getClassLoader();
             builder.addClassLoaders(classloader);
             builder.setUrls(new URL("file:" + jarPath));
-
         }
         builder.forPackages(packages);
         this.reflections = new Reflections(builder);
@@ -210,7 +213,7 @@ public class Fizz {
         if (jarPath == null) {
             classReader = new ClassReader(cname);
         } else {
-            InputStream classInputStream = LoadJarClassUtil.getClassInputStream(cname);
+            InputStream classInputStream = loadJarClassUtil.getClassInputStream(cname);
             if (classInputStream == null) {
                 return;
             }
