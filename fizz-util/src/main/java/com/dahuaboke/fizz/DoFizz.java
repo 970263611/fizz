@@ -10,7 +10,6 @@ import com.dahuaboke.fizz.io.Reader;
 import com.dahuaboke.fizz.io.Writer;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,34 +26,14 @@ public class DoFizz {
 //        String annotationClass = "org.springframework.web.bind.annotation.RestController";
         String[] packages = {"com.dimple", "com.psbc"};
         try {
-            String projectMessage = new Fizz("ifund", "1.0.0", jarPath, annotationClass, null, packages).run();
+            Fizz fizz = new Fizz("ifund", "1.0.0", jarPath, annotationClass, null,null, packages);
+            String projectMessage = fizz.run();
             Writer writer = new FilesWriter();
             writer.write(tempFilePath, projectMessage);
             Reader reader = new FilesReader();
             String read = reader.read(tempFilePath);
-            LinkedHashMap linkedHashMap = JSON.parseObject(read, LinkedHashMap.class);
-            String project = (String) linkedHashMap.get("project");
-            String version = (String) linkedHashMap.get("version");
-            Object chainNodeStr = linkedHashMap.get("chainNode");
-            LinkedHashMap chainNode = JSON.parseObject(JSON.toJSONString(chainNodeStr), LinkedHashMap.class);
-            Object feignNodeStr = linkedHashMap.get("feignNode");
-            Map feignNodeTemp = JSON.parseObject(JSON.toJSONString(feignNodeStr), HashMap.class);
-            Map<String, List<Fizz.Node>> feignNode = new HashMap<>();
-            feignNodeTemp.forEach((k, v) -> {
-                String key = k.toString();
-                List<Fizz.Node> value = JSON.parseArray(JSON.toJSONString(v), Fizz.Node.class);
-                feignNode.put(key, value);
-            });
-            chainNode.forEach((k, v) -> {
-                List<Fizz.Node> nodes = JSON.parseArray(JSON.toJSONString(v), Fizz.Node.class);
-                appendFeign(nodes, feignNode);
-                chainNode.put(k, nodes);
-            });
-            LinkedHashMap result = new LinkedHashMap() {{
-                put("project", project);
-                put("version", version);
-                put("data", chainNode);
-            }};
+            LinkedHashMap allNode = JSON.parseObject(read, LinkedHashMap.class);
+            Map result = fizz.mergeNode(allNode);
             writer.write(finalFilePath, JSON.toJSONString(result, (PropertyFilter) (o, k, v) -> {
                 if (o instanceof Fizz.Node) {
                     if (v == null) {
@@ -79,24 +58,6 @@ public class DoFizz {
             System.out.println(e);
         } catch (Exception e) {
             throw new RuntimeException(e);
-        }
-    }
-
-    private static void appendFeign(List<Fizz.Node> nodes, Map<String, List<Fizz.Node>> feignNode) {
-        for (Fizz.Node node : nodes) {
-            boolean feign = node.isFeign();
-            if (feign) {
-                String feignClassName = node.getName().split("#")[0].replaceAll("/", "\\.");
-                List<Fizz.Node> feignNodes = feignNode.get(feignClassName);
-                if (feignNodes != null) {
-                    node.setChildren(feignNodes);
-                }
-            } else {
-                List<Fizz.Node> children = node.getChildren();
-                if (children != null) {
-                    appendFeign(children, feignNode);
-                }
-            }
         }
     }
 }

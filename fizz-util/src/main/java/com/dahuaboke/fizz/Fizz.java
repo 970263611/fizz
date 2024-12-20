@@ -28,30 +28,29 @@ public class Fizz {
     private final String FEIGN_ANNO_PATH = "org/springframework/cloud/openfeign/FeignClient";
     private final String MAPPER_ANNO_PATH = "org/apache/ibatis/annotations/Mapper";
     private String jarPath;
-    private String search;
-    private String[] marks;
+    private String searchAnnotation;
+    private String[] searchClasses;
+    private String[] markAnnotations;
     private String[] packages;
     private Reflections reflections;
     private Map<String, ClassMetadata> CACHE_CLASSES = new HashMap<>();
     private Set<String> FEIGN_CLASSNAMES = new HashSet<>();
     private Set<String> MAPPER_CLASSNAMES = new HashSet<>();
-    private Set<Class<?>> MAPPER_CLASSES = new HashSet<>();
-    private InterfaceHandler interfaceHandler = new IFundInterfaceHandler();
     private Map<String, Map<String, String>> annotationMetadata = new HashMap<>();
     private String project;
     private String version;
     private Map<String, Set<String>> mapperSql = new HashMap<>();
     private LoadJarClassUtil loadJarClassUtil;
 
-    public Fizz(String project, String version, String jarPath, String search, String[] marks, String[] packages) throws MalformedURLException, ClassNotFoundException {
+    public Fizz(String project, String version, String jarPath, String searchAnnotation, String[] searchClasses, String[] markAnnotations, String[] packages) throws MalformedURLException, ClassNotFoundException {
         this.project = project;
         this.version = version;
         this.jarPath = jarPath;
-        this.search = search;
-        this.marks = marks;
+        this.searchAnnotation = searchAnnotation;
+        this.searchClasses = searchClasses;
+        this.markAnnotations = markAnnotations;
         this.packages = packages;
-        this.loadJarClassUtil = new LoadJarClassUtil(jarPath,packages,null);
-        this.MAPPER_CLASSES = loadJarClassUtil.findMapperSet();
+        this.loadJarClassUtil = new LoadJarClassUtil(jarPath, packages, null);
         ConfigurationBuilder builder = new ConfigurationBuilder();
         if (jarPath != null) {
             URLClassLoader classloader = loadJarClassUtil.getClassLoader();
@@ -65,23 +64,36 @@ public class Fizz {
     public String run() throws Exception {
         try {
             mapperSql = SqlUtils.findTableNameInJar(jarPath);
+            Set<String> mappers = mapperSql.keySet();
+            for (String mapper : mappers) {
+                int i = mapper.lastIndexOf(".");
+                this.MAPPER_CLASSNAMES.add(mapper.substring(0, i).replaceAll("\\.", "/"));
+            }
         } catch (Exception e) {
         }
         Map<String, Map<String, List<Node>>> feignNode = new HashMap<>();
         buildFeignData(feignNode);
         findMapper();
-        Class<? extends Annotation> aClass = (Class<? extends Annotation>) Class.forName(search);
+        Class<? extends Annotation> aClass = (Class<? extends Annotation>) Class.forName(searchAnnotation);
         Set<Class<?>> classes = searchClassByAnnotation(aClass);
         try {
             parseAnnotationMetadata(aClass, classes);
-            for (String markClassName : marks) {
+            for (String markClassName : markAnnotations) {
                 Class<? extends Annotation> markClass = (Class<? extends Annotation>) Class.forName(markClassName);
                 Set<Class<?>> tempMarkClasses = searchClassByAnnotation(markClass);
                 parseAnnotationMetadata(markClass, tempMarkClasses);
             }
         } catch (Exception e) {
         }
-        Map<String, List<Node>> chainNode = buildChain(classes);
+        if (searchClasses != null && searchClasses.length > 0) {
+            for (String s : searchClasses) {
+                try {
+                    classes.add(Class.forName(s));
+                } catch (ClassNotFoundException e) {
+                }
+            }
+        }
+        Map<String, Map<String, Object>> chainNode = buildChain(classes);
         HashMap result = new LinkedHashMap();
         result.put("project", project);
         result.put("version", version);
@@ -147,7 +159,7 @@ public class Fizz {
                 if (interfaceClass.isInterface()) {
                     Set<Class<?>> classes = searchClassByInterface(interfaceClass);
                     classes.removeAll(excludeClass);
-                    Map<String, List<Node>> nodes = buildChain(classes);
+                    Map<String, List<Node>> nodes = buildFeign(classes);
                     if (!nodes.isEmpty()) {
                         feignNode.put(interfaceClass.getName(), nodes);
                     }
@@ -170,20 +182,12 @@ public class Fizz {
         return typesAnnotatedWith == null ? new HashSet<>() : typesAnnotatedWith;
     }
 
-    private Set<Class<?>> searchClassByInterface(Set<Class<?>> interfaceClasses) {
-        Set<Class<?>> classes = new HashSet<>();
-        for (Class<?> interfaceClass : interfaceClasses) {
-            classes.addAll(searchClassByInterface(interfaceClass));
-        }
-        return classes;
-    }
-
     private Set<Class<?>> searchClassByInterface(Class<?> interfaceClass) {
         Set<Class<?>> classes = (Set<Class<?>>) reflections.getSubTypesOf(interfaceClass);
         return classes == null ? new HashSet<>() : classes;
     }
 
-    private Map<String, List<Node>> buildChain(Set<Class<?>> classes) throws IOException, ClassNotFoundException {
+    private Map<String, List<Node>> buildFeign(Set<Class<?>> classes) throws IOException {
         for (Class<?> clz : classes) {
             if (!clz.isInterface()) {
                 cache(clz.getName().replaceAll("\\.", "/"));
@@ -198,6 +202,28 @@ public class Fizz {
         return chainMap;
     }
 
+    private Map<String, Map<String, Object>> buildChain(Set<Class<?>> classes) throws IOException {
+        for (Class<?> clz : classes) {
+            if (!clz.isInterface()) {
+                cache(clz.getName().replaceAll("\\.", "/"));
+            }
+        }
+        Map<String, Map<String, Object>> chainMap = new LinkedHashMap<>();
+        for (Class<?> clz : classes) {
+            String name = clz.getName();
+            List<Node> chains = new ArrayList<>();
+            Map<String, Object> temp = new LinkedHashMap<>();
+            draw(name, chains);
+            if (annotationMetadata.containsKey(name)) {
+                Map<String, String> annotationData = annotationMetadata.get(name);
+                temp.put("annotationData", annotationData);
+            }
+            temp.put("chain", chains);
+            chainMap.put(name, temp);
+        }
+        return chainMap;
+    }
+
     private void cache(String cname) throws IOException {
         if (!startWithPackages(cname)) {
             return;
@@ -208,6 +234,9 @@ public class Fizz {
         }
         final ClassMetadata classMetadata = new ClassMetadata();
         classMetadata.setName(cname);
+        if (MAPPER_CLASSNAMES.contains(cname)) {
+            classMetadata.setMapper(true);
+        }
         CACHE_CLASSES.put(cname, classMetadata);
         ClassReader classReader;
         if (jarPath == null) {
@@ -226,15 +255,11 @@ public class Fizz {
         AtomicInteger nowMethodLine = new AtomicInteger(0);
         classReader.accept(new ClassVisitor(Opcodes.ASM9) {
             boolean isFeign = false;
-            boolean isMapper = false;
 
             @Override
             public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
                 if (descriptor.contains(FEIGN_ANNO_PATH)) {
                     isFeign = true;
-                }
-                if (descriptor.contains(MAPPER_ANNO_PATH)) {
-                    isMapper = true;
                 }
                 return super.visitAnnotation(descriptor, visible);
             }
@@ -245,7 +270,6 @@ public class Fizz {
                     return null;
                 }
                 classMetadata.setFeign(isFeign);
-                classMetadata.setMapper(isMapper);
                 AtomicReference<MethodMetadata> methodMetadata = new AtomicReference<>(new MethodMetadata());
                 methodMetadata.get().setName(cMethod);
                 methodMetadata.get().setParam(cDescriptor);
@@ -374,10 +398,6 @@ public class Fizz {
             chains.add(node);
             node.setFeign(classMetadata.isFeign());
             node.setMapper(classMetadata.isMapper());
-            if (annotationMetadata.containsKey(cname)) {
-                Map<String, String> annotationData = annotationMetadata.get(cname);
-                node.setAnnotationMetadata(annotationData);
-            }
             String temp = cname.replaceAll("\\.", "/") + "#" + methodName + "#" + method.getParam();
             if (alreadyInvoke.contains(temp)) {
                 node.setCycle(temp);
@@ -386,7 +406,7 @@ public class Fizz {
             node.setName(temp);
             alreadyInvoke.add(temp);
             List<TraceMetadata> traces = method.getTraces();
-            if (traces != null) {
+            if (traces != null && !traces.isEmpty()) {
                 drawTraces(traces, node, alreadyInvoke, false, null);
             } else {
                 if (classMetadata.isMapper()) {
@@ -395,7 +415,7 @@ public class Fizz {
                     node.setTables(mapperSql.get(classN + "\\." + methodN));
                 }
                 Map<String, List<TraceMetadata>> interfaceTraces = method.getInterfaceTraces();
-                if (!interfaceTraces.isEmpty()) {
+                if (interfaceTraces != null && !interfaceTraces.isEmpty()) {
                     interfaceTraces.forEach((k, v) -> {
                         drawTraces(v, node, alreadyInvoke, true, k);
                     });
@@ -404,7 +424,7 @@ public class Fizz {
         }
     }
 
-    private void drawTraces(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke, boolean isInterface, String k) {
+    private void drawTraces(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke, boolean isInterface, String implementClassName) {
         List<TraceMetadata> distinctTraces = new ArrayList<>();
         for (TraceMetadata trace : traces) {
             boolean has = false;
@@ -424,10 +444,10 @@ public class Fizz {
                 distinctTraces.add(trace);
             }
         }
-        drawTrace(distinctTraces, node, alreadyInvoke, isInterface, k);
+        drawTrace(distinctTraces, node, alreadyInvoke, isInterface, implementClassName);
     }
 
-    private void drawTrace(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke, boolean isInterface, String k) {
+    private void drawTrace(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke, boolean isInterface, String implementClassName) {
         for (TraceMetadata trace : traces) {
             String className = trace.getClassName();
             String methodName = trace.getMethodName();
@@ -444,7 +464,7 @@ public class Fizz {
             childNode.setName(temp);
             alreadyInvoke.add(temp);
             if (isInterface) {
-                node.setInterfaceChildren(k, childNode);
+                node.setInterfaceChildren(implementClassName, childNode);
             } else {
                 node.setChildren(childNode);
             }
@@ -464,7 +484,7 @@ public class Fizz {
                             childNode.setTables(mapperSql.get(classN.replaceAll("/", "\\.") + "." + methodN));
                         }
                     } else {
-                        drawTrace(childTraces, childNode, alreadyInvoke, isInterface, k);
+                        drawTrace(childTraces, childNode, alreadyInvoke, isInterface, implementClassName);
                     }
                 }
             }
@@ -634,7 +654,6 @@ public class Fizz {
         private List<Node> children;
         private Map<String, List<Node>> interfaceChildren;
         private String cycle;
-        private Map<String, String> annotationMetadata;
         private Set<String> tables;
 
         public String getName() {
@@ -676,14 +695,6 @@ public class Fizz {
             this.cycle = cycle;
         }
 
-        public Map<String, String> getAnnotationMetadata() {
-            return annotationMetadata;
-        }
-
-        public void setAnnotationMetadata(Map<String, String> annotationMetadata) {
-            this.annotationMetadata = annotationMetadata;
-        }
-
         public Set<String> getTables() {
             return tables;
         }
@@ -722,19 +733,56 @@ public class Fizz {
         }
     }
 
-    interface InterfaceHandler {
-        String findImplementClassNameByInterface(String interfaceName) throws ClassNotFoundException;
+    public Map mergeNode(Map allNode) {
+        String project = (String) allNode.get("project");
+        String version = (String) allNode.get("version");
+        Object chainNodeStr = allNode.get("chainNode");
+        LinkedHashMap chainNode = JSON.parseObject(JSON.toJSONString(chainNodeStr), LinkedHashMap.class);
+        Object feignNodeStr = allNode.get("feignNode");
+        Map feignNodeTemp = JSON.parseObject(JSON.toJSONString(feignNodeStr), LinkedHashMap.class);
+        Map<String, Map<String, List<Fizz.Node>>> feignNode = new LinkedHashMap<>();
+        feignNodeTemp.forEach((k, v) -> {
+            String key = k.toString();
+            LinkedHashMap value = JSON.parseObject(JSON.toJSONString(v), LinkedHashMap.class);
+            Map<String, List<Fizz.Node>> tempNode = new LinkedHashMap<>();
+            value.forEach((k1, v1) -> {
+                String key1 = k1.toString();
+                List<Fizz.Node> value1 = JSON.parseArray(JSON.toJSONString(v1), Fizz.Node.class);
+                tempNode.put(key1, value1);
+            });
+            feignNode.put(key, tempNode);
+        });
+        chainNode.forEach((k, v) -> {
+            LinkedHashMap temp = JSON.parseObject(JSON.toJSONString(v), LinkedHashMap.class);
+            Object chain = temp.get("chain");
+            List<Fizz.Node> nodes = JSON.parseArray(JSON.toJSONString(chain), Fizz.Node.class);
+            appendFeign(nodes, feignNode);
+            temp.put("chain", nodes);
+            chainNode.put(k, temp);
+        });
+        LinkedHashMap result = new LinkedHashMap() {{
+            put("project", project);
+            put("version", version);
+            put("data", chainNode);
+        }};
+        return result;
     }
 
-    private class IFundInterfaceHandler implements InterfaceHandler {
-        @Override
-        public String findImplementClassNameByInterface(String interfaceName) throws ClassNotFoundException {
-            Class<?> interfaceClassName = Class.forName(interfaceName);
-            Set<Class<?>> classes = searchClassByInterface(interfaceClassName);
-            if (!classes.isEmpty()) {
-                return new ArrayList<>(classes).get(0).getName();
+    private static void appendFeign(List<Fizz.Node> nodes, Map<String, Map<String, List<Fizz.Node>>> feignNode) {
+        for (Fizz.Node node : nodes) {
+            boolean feign = node.isFeign();
+            if (feign) {
+                String feignClassName = node.getName().split("#")[0].replaceAll("/", "\\.");
+                Map<String, List<Fizz.Node>> feignNodes = feignNode.get(feignClassName);
+                if (feignNodes != null) {
+                    node.setInterfaceChildren(feignNodes);
+                }
+            } else {
+                List<Fizz.Node> children = node.getChildren();
+                if (children != null) {
+                    appendFeign(children, feignNode);
+                }
             }
-            return null;
         }
     }
 }

@@ -696,7 +696,7 @@ public final class LoadJarClassUtil {
     public Set<Class<?>> findMapperSet() {
         Set<Class<?>> set = new HashSet<>();
         //查找是否有mapperScan注解
-        Class<? extends Annotation> mapperScanAnno = null;
+        Class<? extends Annotation> mapperScanAnno;
         try {
             mapperScanAnno = (Class<? extends Annotation>) classLoader.loadClass("org.mybatis.spring.annotation.MapperScan");
         } catch (ClassNotFoundException e) {
@@ -733,7 +733,7 @@ public final class LoadJarClassUtil {
             }
         }
         //看看有没有mapper注解
-        Class<? extends Annotation> mapperAnno = null;
+        Class<? extends Annotation> mapperAnno;
         try {
             mapperAnno = (Class<? extends Annotation>) classLoader.loadClass("org.apache.ibatis.annotations.Mapper");
         } catch (ClassNotFoundException e) {
