@@ -107,6 +107,9 @@ public class Fizz {
                 if (v instanceof List && ((List) v).isEmpty()) {
                     return false;
                 }
+                if (v instanceof Set && ((Set) v).isEmpty()) {
+                    return false;
+                }
                 if ("feign".equals(k) || "mapper".equals(k)) {
                     if (v instanceof Boolean) {
                         if (!((Boolean) v).booleanValue()) {

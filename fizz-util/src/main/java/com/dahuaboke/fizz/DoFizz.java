@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class DoFizz {
 
@@ -20,13 +21,11 @@ public class DoFizz {
         String tempFilePath = "C:\\Users\\dahua\\Desktop\\xc\\a.json";
         String finalFilePath = "C:\\Users\\dahua\\Desktop\\xc\\b.json";
         String jarPath = "C:\\Users\\dahua\\Documents\\WeChat Files\\dingweiqiang872226\\FileStorage\\File\\2024-12\\ifund-trade-deployment-project-0.0.1-SNAPSHOT.jar";
-//        String jarPath = "C:\\Users\\dahua\\Documents\\WeChat Files\\dingweiqiang872226\\FileStorage\\File\\2024-12\\nacostest-1.0-SNAPSHOT.jar";
 //        String annotationClass = "com.psbc.otsp.base.trade.annotation.annotation.OtspService";
         String annotationClass = "com.psbc.otsp.base.trade.annotation.annotation.PluginComponent";
-//        String annotationClass = "org.springframework.web.bind.annotation.RestController";
-        String[] packages = {"com.dimple", "com.psbc"};
+        String[] packages = {"com.psbc.ifund.trade.fd.finance.automic.otspservice"};
         try {
-            Fizz fizz = new Fizz("ifund", "1.0.0", jarPath, annotationClass, null,null, packages);
+            Fizz fizz = new Fizz("ifund", "1.0.0", jarPath, annotationClass, null, null, packages);
             String projectMessage = fizz.run();
             Writer writer = new FilesWriter();
             writer.write(tempFilePath, projectMessage);
@@ -40,6 +39,9 @@ public class DoFizz {
                         return false;
                     }
                     if (v instanceof List && ((List) v).isEmpty()) {
+                        return false;
+                    }
+                    if (v instanceof Set && ((Set) v).isEmpty()) {
                         return false;
                     }
                     if ("feign".equals(k) || "mapper".equals(k)) {
