@@ -98,12 +98,11 @@ public class JSONToEasy {
     private void addChains(List<String> chains) {
         List<String> list = new ArrayList<>();
         //过滤非注解界定，头节点不过滤
-        for (int i = 1; i < chains.size(); i++) {
-            for (String chain : chains) {
-                if (annoClass == null || annoClass.size() == 0 || annoClass.contains(chain)) {
-                    list.add(chain);
-                }
+        for (int i = 0; i < chains.size(); i++) {
+            if (i == 0 || annoClass == null || annoClass.size() == 0 || annoClass.contains(chains.get(i))) {
+                list.add(chains.get(i));
             }
+
         }
         if (list.size() == 0) {
             return;
@@ -133,7 +132,10 @@ public class JSONToEasy {
 
 
 //    public static void main(String[] args) throws Exception {
-//        new JSONToEasy(null).run("C:\\Users\\23195\\Desktop\\ttt\\qqq.json");
+//        FilesReader fr = new FilesReader();
+//        String s = fr.read("C:\\Users\\23195\\Desktop\\ttt\\qqq.json");
+//        String b = new JSONToEasy(null).run(s);
+//        System.out.println(b);
 //    }
 
 }
