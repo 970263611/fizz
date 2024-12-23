@@ -3,7 +3,6 @@ package com.dahuaboke.fizz.util;
 import com.alibaba.druid.DbType;
 import com.wjy.mapper2sql.SqlUtil;
 import com.wjy.mapper2sql.bo.MapperSqlInfo;
-import com.wjy.mapper2sql.util.FileUtil;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Table;
@@ -15,17 +14,15 @@ import net.sf.jsqlparser.statement.select.Join;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.update.Update;
-import net.sf.jsqlparser.util.deparser.ExpressionDeParser;
-import net.sf.jsqlparser.util.deparser.SelectDeParser;
-import net.sf.jsqlparser.util.deparser.UpdateDeParser;
+
 
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+
 import java.util.*;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -240,6 +237,9 @@ public class SqlUtils {
      * @return  key: namespace.id    value: 表名 Set<String>
      */
     public static Map<String,Set<String>> findTableNameInJar(String jarPath) {
+        //druid日志级别设置为error
+        Logger logger = Logger.getLogger("com.alibaba.druid.sql");
+        logger.setLevel(Level.SEVERE);
         Map<String,Set<String>> map = new HashMap();
         //创建解压路径
         if(jarPath == null || !jarPath.endsWith(".jar")){
@@ -310,13 +310,8 @@ public class SqlUtils {
 //                System.out.println(k + "=" + v);
 //            }
 //        });
-////        findTableNameInJar(jarFilePath);
+//        findTableNameInJar(jarFilePath);
 //    }
 
-//    public static void main(String[] args) {
-//        String s = "C:\\Users\\23195\\Desktop\\ttt\\demojar\\tmp\\ifund-common-multi-datasource-0.0.1-SNAPSHOT.jar";
-//        File file = new File(s);
-//        file.delete();
-//    }
 
 }
