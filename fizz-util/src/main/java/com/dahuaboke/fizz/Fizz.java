@@ -1,9 +1,7 @@
 package com.dahuaboke.fizz;
 
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.annotation.JSONType;
-import com.alibaba.fastjson2.filter.PropertyFilter;
 import com.dahuaboke.fizz.util.LoadJarClassUtil;
 import com.dahuaboke.fizz.util.SqlUtils;
 import org.objectweb.asm.*;
@@ -30,7 +28,6 @@ public class Fizz {
     private String jarPath;
     private String searchAnnotation;
     private String[] searchClasses;
-    private String[] markAnnotations;
     private String[] packages;
     private Reflections reflections;
     private Map<String, ClassMetadata> CACHE_CLASSES = new HashMap<>();
@@ -42,13 +39,12 @@ public class Fizz {
     private Map<String, Set<String>> mapperSql = new HashMap<>();
     private LoadJarClassUtil loadJarClassUtil;
 
-    public Fizz(String project, String version, String jarPath, String searchAnnotation, String[] searchClasses, String[] markAnnotations, String[] packages) throws MalformedURLException, ClassNotFoundException {
+    public Fizz(String project, String version, String jarPath, String searchAnnotation, String[] searchClasses, String[] packages) throws MalformedURLException, ClassNotFoundException {
         this.project = project;
         this.version = version;
         this.jarPath = jarPath;
         this.searchAnnotation = searchAnnotation;
         this.searchClasses = searchClasses;
-        this.markAnnotations = markAnnotations;
         this.packages = packages;
         this.loadJarClassUtil = new LoadJarClassUtil(jarPath, packages, null);
         ConfigurationBuilder builder = new ConfigurationBuilder();
@@ -61,7 +57,7 @@ public class Fizz {
         this.reflections = new Reflections(builder);
     }
 
-    public String run() throws Exception {
+    public Map run() throws Exception {
         try {
             mapperSql = SqlUtils.findTableNameInJar(jarPath);
             Set<String> mappers = mapperSql.keySet();
@@ -78,11 +74,6 @@ public class Fizz {
         Set<Class<?>> classes = searchClassByAnnotation(aClass);
         try {
             parseAnnotationMetadata(aClass, classes);
-            for (String markClassName : markAnnotations) {
-                Class<? extends Annotation> markClass = (Class<? extends Annotation>) Class.forName(markClassName);
-                Set<Class<?>> tempMarkClasses = searchClassByAnnotation(markClass);
-                parseAnnotationMetadata(markClass, tempMarkClasses);
-            }
         } catch (Exception e) {
         }
         if (searchClasses != null && searchClasses.length > 0) {
@@ -94,32 +85,12 @@ public class Fizz {
             }
         }
         Map<String, Map<String, Object>> chainNode = buildChain(classes);
-        HashMap result = new LinkedHashMap();
+        Map result = new LinkedHashMap();
         result.put("project", project);
         result.put("version", version);
         result.put("chainNode", chainNode);
         result.put("feignNode", feignNode);
-        return JSON.toJSONString(result, (PropertyFilter) (o, k, v) -> {
-            if (o instanceof Node) {
-                if (v == null) {
-                    return false;
-                }
-                if (v instanceof List && ((List) v).isEmpty()) {
-                    return false;
-                }
-                if (v instanceof Set && ((Set) v).isEmpty()) {
-                    return false;
-                }
-                if ("feign".equals(k) || "mapper".equals(k)) {
-                    if (v instanceof Boolean) {
-                        if (!((Boolean) v).booleanValue()) {
-                            return false;
-                        }
-                    }
-                }
-            }
-            return true;
-        }, JSONWriter.Feature.PrettyFormat, JSONWriter.Feature.WriteNullListAsEmpty);
+        return result;
     }
 
     private void findMapper() {
@@ -180,7 +151,7 @@ public class Fizz {
         return false;
     }
 
-    private Set<Class<?>> searchClassByAnnotation(Class<? extends Annotation> clazz) {
+    public Set<Class<?>> searchClassByAnnotation(Class<? extends Annotation> clazz) {
         Set<Class<?>> typesAnnotatedWith = reflections.getTypesAnnotatedWith(clazz);
         return typesAnnotatedWith == null ? new HashSet<>() : typesAnnotatedWith;
     }
@@ -771,7 +742,7 @@ public class Fizz {
         return result;
     }
 
-    private static void appendFeign(List<Fizz.Node> nodes, Map<String, Map<String, List<Fizz.Node>>> feignNode) {
+    private void appendFeign(List<Fizz.Node> nodes, Map<String, Map<String, List<Fizz.Node>>> feignNode) {
         for (Fizz.Node node : nodes) {
             boolean feign = node.isFeign();
             if (feign) {

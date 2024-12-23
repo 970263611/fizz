@@ -1,37 +1,34 @@
-package com.dahuaboke.fizz.util;
+package com.dahuaboke.fizz;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSONWriter;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-public class JSONToEasy {
+public class SimpleChain {
 
     private Map<String, Map> chainsMap = new HashMap<>();
 
     /**
      * 标注解的列表，为空时不进行过滤；不为空时进行过滤，仅展示annoClass中的节点(链条的第一个节点不进行过滤)
      */
-    private List<String> annoClass;
+    private Set<String> annoClass;
 
 
-    public JSONToEasy(List<String> annoClass) {
+    public SimpleChain(Set<String> annoClass) {
         this.annoClass = annoClass;
     }
 
     /**
      * 主要方法
      *
-     * @param jsonStr 全量链路字符串
+     * @param map 全量链路
      * @return 简化后的链路字符串
      */
     //TODO 异常处理没做太好
-    public String run(String jsonStr) {
-        JSONObject json = JSONObject.parseObject(jsonStr);
+    public Map<String, Map> run(Map map) {
+        JSONObject json = JSONObject.parseObject(JSON.toJSONString(map));
         JSONObject data = json.getJSONObject("data");
         for (String key : data.keySet()) {
             JSONObject j1 = data.getJSONObject(key);
@@ -42,9 +39,7 @@ public class JSONToEasy {
                 }
             }
         }
-        String s = JSONObject.toJSONString(chainsMap, JSONWriter.Feature.PrettyFormat, JSONWriter.Feature.WriteMapNullValue);
-//        System.out.println(s);
-        return s;
+        return chainsMap;
     }
 
     /**
@@ -129,13 +124,4 @@ public class JSONToEasy {
             map = map.get(str);
         }
     }
-
-
-//    public static void main(String[] args) throws Exception {
-//        FilesReader fr = new FilesReader();
-//        String s = fr.read("C:\\Users\\23195\\Desktop\\ttt\\qqq.json");
-//        String b = new JSONToEasy(null).run(s);
-//        System.out.println(b);
-//    }
-
 }
