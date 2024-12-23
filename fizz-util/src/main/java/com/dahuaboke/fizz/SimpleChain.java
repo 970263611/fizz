@@ -3,6 +3,7 @@ package com.dahuaboke.fizz;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.dahuaboke.fizz.io.FilesReader;
 
 import java.util.*;
 
@@ -94,10 +95,10 @@ public class SimpleChain {
         List<String> list = new ArrayList<>();
         //过滤非注解界定，头节点不过滤
         for (int i = 0; i < chains.size(); i++) {
-            if (i == 0 || annoClass == null || annoClass.size() == 0 || annoClass.contains(chains.get(i))) {
+            //相邻相同过滤
+            if (i == 0 || ((annoClass == null || annoClass.size() == 0 || annoClass.contains(chains.get(i))) && !chains.get(i - 1).equals(chains.get(i)))) {
                 list.add(chains.get(i));
             }
-
         }
         if (list.size() == 0) {
             return;
@@ -124,4 +125,5 @@ public class SimpleChain {
             map = map.get(str);
         }
     }
+
 }
