@@ -96,7 +96,7 @@ public class SimpleChain {
         //过滤非注解界定，头节点不过滤
         for (int i = 0; i < chains.size(); i++) {
             //相邻相同过滤
-            if (i == 0 || ((annoClass == null || annoClass.size() == 0 || annoClass.contains(chains.get(i))) && !chains.get(i - 1).equals(chains.get(i)))) {
+            if (i == 0 || ((annoClass == null || annoClass.size() == 0 || annoClass.contains(chains.get(i))) && !list.get(list.size() - 1).equals(chains.get(i)))) {
                 list.add(chains.get(i));
             }
         }
