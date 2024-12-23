@@ -10,30 +10,12 @@ import com.dahuaboke.fizz.io.Reader;
 import com.dahuaboke.fizz.io.Writer;
 
 import java.io.IOException;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public class DoFizz {
 
-    public static void main(String[] args) {
-        String tempFilePath = "C:\\Users\\dahua\\Desktop\\xc\\a.json";
-        String finalFilePath = "C:\\Users\\dahua\\Desktop\\xc\\b.json";
-        String jarPath = "C:\\Users\\dahua\\Documents\\WeChat Files\\dingweiqiang872226\\FileStorage\\File\\2024-12\\ifund-trade-deployment-project-0.0.1-SNAPSHOT.jar";
-//        String annotationClass = "com.psbc.otsp.base.trade.annotation.annotation.OtspService";
-        String annotationClass = "com.psbc.otsp.base.trade.annotation.annotation.PluginComponent";
-        String[] packages = {"com.psbc.ifund.trade.fd.finance.automic.otspservice"};
-        try {
-            Fizz fizz = new Fizz("ifund", "1.0.0", jarPath, annotationClass, null, null, packages);
-            String projectMessage = fizz.run();
-            Writer writer = new FilesWriter();
-            writer.write(tempFilePath, projectMessage);
-            Reader reader = new FilesReader();
-            String read = reader.read(tempFilePath);
-            LinkedHashMap allNode = JSON.parseObject(read, LinkedHashMap.class);
-            Map result = fizz.mergeNode(allNode);
-            writer.write(finalFilePath, JSON.toJSONString(result, (PropertyFilter) (o, k, v) -> {
+    private static PropertyFilter filter =
+            (o, k, v) -> {
                 if (o instanceof Fizz.Node) {
                     if (v == null) {
                         return false;
@@ -53,7 +35,32 @@ public class DoFizz {
                     }
                 }
                 return true;
-            }, JSONWriter.Feature.PrettyFormat, JSONWriter.Feature.WriteNullListAsEmpty));
+            };
+
+    public static void main(String[] args) {
+        String tempFilePath = "C:\\Users\\dahua\\Desktop\\xc\\a.json";
+        String finalFilePath = "C:\\Users\\dahua\\Desktop\\xc\\b.json";
+        String jarPath = "C:\\Users\\dahua\\Documents\\WeChat Files\\dingweiqiang872226\\FileStorage\\File\\2024-12\\ifund-trade-deployment-project-0.0.1-SNAPSHOT.jar";
+//        String annotationClass = "com.psbc.otsp.base.trade.annotation.annotation.OtspService";
+        String annotationClass = "com.psbc.otsp.base.trade.annotation.annotation.PluginComponent";
+        String[] packages = {"com.psbc.ifund"};
+        Map<String, String> marks = new HashMap() {{
+            put(annotationClass, "业务组件");
+        }};
+        try {
+            Fizz fizz = new Fizz("ifund", "1.0.0", jarPath, annotationClass, null, packages);
+            String projectMessage = JSON.toJSONString(fizz.run(), filter, JSONWriter.Feature.PrettyFormat, JSONWriter.Feature.WriteNullListAsEmpty);
+            Writer writer = new FilesWriter();
+            writer.write(tempFilePath, projectMessage);
+            Reader reader = new FilesReader();
+            String read = reader.read(tempFilePath);
+            LinkedHashMap allNode = JSON.parseObject(read, LinkedHashMap.class);
+            Map result = fizz.mergeNode(allNode);
+            SimpleChain simpleChain = new SimpleChain(marks.keySet());
+            result.put("simple", simpleChain.run(result));
+            AnnotationMark annotationMark = new AnnotationMark();
+            result.put("component", annotationMark.markAnnotations(fizz, marks));
+            writer.write(finalFilePath, JSON.toJSONString(result, filter, JSONWriter.Feature.PrettyFormat, JSONWriter.Feature.WriteNullListAsEmpty));
         } catch (IOException e) {
             System.out.println(e);
         } catch (ClassNotFoundException e) {
