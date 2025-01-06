@@ -1,22 +1,31 @@
 package com.dahuaboke.fizz;
 
-import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.annotation.JSONType;
 import com.dahuaboke.fizz.util.LoadJarClassUtil;
-import com.dahuaboke.fizz.util.SqlUtils;
-import org.objectweb.asm.*;
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 import org.reflections.Reflections;
 import org.reflections.util.ConfigurationBuilder;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -36,17 +45,17 @@ public class Fizz {
     private Map<String, Map<String, String>> annotationMetadata = new HashMap<>();
     private String project;
     private String version;
-    private Map<String, Set<String>> mapperSql = new HashMap<>();
+    private Map<Constants.SqlMap, Map<String, Set<String>>> mapperSql;
     private LoadJarClassUtil loadJarClassUtil;
 
-    public Fizz(String project, String version, String jarPath, String searchAnnotation, String[] searchClasses, String[] packages) throws MalformedURLException, ClassNotFoundException {
+    public Fizz(String project, String version, String jarPath, String searchAnnotation, String[] searchClasses, String[] packages, LoadJarClassUtil loadJarClassUtil, Map<Constants.SqlMap, Map<String, Set<String>>> mapperSql) throws MalformedURLException, ClassNotFoundException {
         this.project = project;
         this.version = version;
         this.jarPath = jarPath;
         this.searchAnnotation = searchAnnotation;
         this.searchClasses = searchClasses;
         this.packages = packages;
-        this.loadJarClassUtil = new LoadJarClassUtil(jarPath, packages, null);
+        this.loadJarClassUtil = loadJarClassUtil;
         ConfigurationBuilder builder = new ConfigurationBuilder();
         if (jarPath != null) {
             URLClassLoader classloader = loadJarClassUtil.getClassLoader();
@@ -55,12 +64,12 @@ public class Fizz {
         }
         builder.forPackages(packages);
         this.reflections = new Reflections(builder);
+        this.mapperSql = mapperSql;
     }
 
     public Map run() throws Exception {
         try {
-            mapperSql = SqlUtils.findTableNameInJar(jarPath);
-            Set<String> mappers = mapperSql.keySet();
+            Set<String> mappers = mapperSql.get(Constants.SqlMap.SQLID_TABLES).keySet();
             for (String mapper : mappers) {
                 int i = mapper.lastIndexOf(".");
                 this.MAPPER_CLASSNAMES.add(mapper.substring(0, i).replaceAll("\\.", "/"));
@@ -118,13 +127,20 @@ public class Fizz {
                         FEIGN_CLASSNAMES.add(clz.getName().replaceAll("\\.", "/"));
                         Annotation annotation = clz.getAnnotation(feignClass);
                         if (annotation != null) {
-                            Method fallbackFactoryMethod = annotation.annotationType().getDeclaredMethod("fallbackFactory");
-                            fallbackFactoryMethod.setAccessible(true);
-                            Object obj = fallbackFactoryMethod.invoke(annotation);
-                            if (obj != null) {
-                                Class<?> fallbackClass = (Class<?>) obj;
-                                excludeClass.add(fallbackClass);
-                            }
+//                            Method fallbackFactoryMethod = annotation.annotationType().getDeclaredMethod("fallbackFactory");
+//                            fallbackFactoryMethod.setAccessible(true);
+//                            Object obj = fallbackFactoryMethod.invoke(annotation);
+//                            if (obj != null) {
+//                                Class<?> fallbackClass = (Class<?>) obj;
+//                                excludeClass.add(fallbackClass);
+//                            }
+//                            Method fallbackMethod = annotation.annotationType().getDeclaredMethod("fallback");
+//                            fallbackMethod.setAccessible(true);
+//                            obj = fallbackMethod.invoke(annotation);
+//                            if (obj != null) {
+//                                Class<?> fallbackClass = (Class<?>) obj;
+//                                excludeClass.add(fallbackClass);
+//                            }
                         }
                     }
                 }
@@ -144,7 +160,7 @@ public class Fizz {
 
     private boolean startWithPackages(String path) {
         for (String pkg : packages) {
-            if (path.startsWith(pkg.replaceAll("\\.", "/"))) {
+            if (path.replaceAll("/", "\\.").startsWith(pkg)) {
                 return true;
             }
         }
@@ -164,7 +180,7 @@ public class Fizz {
     private Map<String, List<Node>> buildFeign(Set<Class<?>> classes) throws IOException {
         for (Class<?> clz : classes) {
             if (!clz.isInterface()) {
-                cache(clz.getName().replaceAll("\\.", "/"));
+                cache(clz.getName().replaceAll("\\.", "/"), false);
             }
         }
         Map<String, List<Node>> chainMap = new LinkedHashMap<>();
@@ -179,7 +195,7 @@ public class Fizz {
     private Map<String, Map<String, Object>> buildChain(Set<Class<?>> classes) throws IOException {
         for (Class<?> clz : classes) {
             if (!clz.isInterface()) {
-                cache(clz.getName().replaceAll("\\.", "/"));
+                cache(clz.getName().replaceAll("\\.", "/"), false);
             }
         }
         Map<String, Map<String, Object>> chainMap = new LinkedHashMap<>();
@@ -198,7 +214,7 @@ public class Fizz {
         return chainMap;
     }
 
-    private void cache(String cname) throws IOException {
+    private void cache(String cname, boolean isOtherInterface) throws IOException {
         if (!startWithPackages(cname)) {
             return;
         }
@@ -207,20 +223,20 @@ public class Fizz {
             return;
         }
         final ClassMetadata classMetadata = new ClassMetadata();
+        classMetadata.setOtherInterface(isOtherInterface);
         classMetadata.setName(cname);
         if (MAPPER_CLASSNAMES.contains(cname)) {
             classMetadata.setMapper(true);
         }
-        CACHE_CLASSES.put(cname, classMetadata);
-        ClassReader classReader;
+        CACHE_CLASSES.put(cname.replace(".", "/"), classMetadata);
+        ClassReader classReader = null;
         if (jarPath == null) {
             classReader = new ClassReader(cname);
         } else {
-            InputStream classInputStream = loadJarClassUtil.getClassInputStream(cname);
-            if (classInputStream == null) {
+            classReader = loadJarClassUtil.getClassReader(cname);
+            if (classReader == null) {
                 return;
             }
-            classReader = new ClassReader(classInputStream);
         }
         Map<String, Map<String, Integer>> methodLineMap = new HashMap<>();
         AtomicReference<String> tempMethodNameAndParam = new AtomicReference<>("");
@@ -345,7 +361,7 @@ public class Fizz {
                 methodMetadata.setTrace(traceMetadata);
             }
             try {
-                cache(className);
+                cache(className, isInterface);
             } catch (IOException e) {
                 throw new Exception(e);
             }
@@ -372,6 +388,10 @@ public class Fizz {
             chains.add(node);
             node.setFeign(classMetadata.isFeign());
             node.setMapper(classMetadata.isMapper());
+            if (classMetadata.isMapper()) {
+                String methodN = method.getName();
+                node.setTables(findSqlTables(classMetadata.getName(), methodN));
+            }
             String temp = cname.replaceAll("\\.", "/") + "#" + methodName + "#" + method.getParam();
             if (alreadyInvoke.contains(temp)) {
                 node.setCycle(temp);
@@ -379,26 +399,21 @@ public class Fizz {
             }
             node.setName(temp);
             alreadyInvoke.add(temp);
+            String name = classMetadata.getName();
             List<TraceMetadata> traces = method.getTraces();
             if (traces != null && !traces.isEmpty()) {
-                drawTraces(traces, node, alreadyInvoke, false, null);
-            } else {
-                if (classMetadata.isMapper()) {
-                    String classN = classMetadata.getName();
-                    String methodN = method.getName();
-                    node.setTables(mapperSql.get(classN + "\\." + methodN));
-                }
-                Map<String, List<TraceMetadata>> interfaceTraces = method.getInterfaceTraces();
-                if (interfaceTraces != null && !interfaceTraces.isEmpty()) {
-                    interfaceTraces.forEach((k, v) -> {
-                        drawTraces(v, node, alreadyInvoke, true, k);
-                    });
-                }
+                drawTraces(traces, node, alreadyInvoke, name);
+            }
+            Map<String, List<TraceMetadata>> interfaceTraces = method.getInterfaceTraces();
+            if (interfaceTraces != null && !interfaceTraces.isEmpty()) {
+                interfaceTraces.forEach((k, v) -> {
+                    drawTraces(v, node, alreadyInvoke, name);
+                });
             }
         }
     }
 
-    private void drawTraces(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke, boolean isInterface, String implementClassName) {
+    private void drawTraces(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke, String parentClassName) {
         List<TraceMetadata> distinctTraces = new ArrayList<>();
         for (TraceMetadata trace : traces) {
             boolean has = false;
@@ -418,10 +433,10 @@ public class Fizz {
                 distinctTraces.add(trace);
             }
         }
-        drawTrace(distinctTraces, node, alreadyInvoke, isInterface, implementClassName);
+        drawTrace(distinctTraces, node, alreadyInvoke, parentClassName);
     }
 
-    private void drawTrace(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke, boolean isInterface, String implementClassName) {
+    private void drawTrace(List<TraceMetadata> traces, Node node, HashSet<String> alreadyInvoke, String parentClassName) {
         for (TraceMetadata trace : traces) {
             String className = trace.getClassName();
             String methodName = trace.getMethodName();
@@ -431,14 +446,17 @@ public class Fizz {
                 node.setCycle(temp);
                 continue;
             }
-            ClassMetadata classMetadata = CACHE_CLASSES.get(className);
+            ClassMetadata classMetadata = CACHE_CLASSES.get(className.replace(".", "/"));
             Node childNode = new Node();
             childNode.setFeign(classMetadata.isFeign());
             childNode.setMapper(classMetadata.isMapper());
+            if (classMetadata.isMapper()) {
+                childNode.setTables(findSqlTables(classMetadata.getName(), methodName));
+            }
             childNode.setName(temp);
             alreadyInvoke.add(temp);
-            if (isInterface) {
-                node.setInterfaceChildren(implementClassName, childNode);
+            if (classMetadata.isOtherInterface() && !parentClassName.equals(className)) {
+                node.setInterfaceChildren(className, childNode);
             } else {
                 node.setChildren(childNode);
             }
@@ -451,37 +469,64 @@ public class Fizz {
                 String param = dataMethod.getParam();
                 if (methodName.equals(name) && methodParam.equals(param)) {
                     List<TraceMetadata> childTraces = dataMethod.getTraces();
-                    if (childTraces == null) {
-                        if (classMetadata.isMapper()) {
-                            String classN = classMetadata.getName();
-                            String methodN = dataMethod.getName();
-                            childNode.setTables(mapperSql.get(classN.replaceAll("/", "\\.") + "." + methodN));
-                        }
-                    } else {
-                        drawTrace(childTraces, childNode, alreadyInvoke, isInterface, implementClassName);
+                    if (childTraces != null) {
+                        drawTraces(childTraces, childNode, alreadyInvoke, className);
                     }
                 }
             }
         }
     }
 
+    private Set<String> findSqlTables(String className, String methodName) {
+        className = className.replace("/", ".");
+        Set<String> tables = mapperSql.get(Constants.SqlMap.SQLID_TABLES).get(className + "." + methodName);
+        if (tables == null || tables.size() == 0) {
+            tables = mapperSql.get(Constants.SqlMap.ENTITY_TABLES).get(className);
+        }
+        if (tables == null) {
+            return new HashSet<>();
+        }
+        return tables;
+    }
+
     private void parseAnnotationMetadata(Class markClass, Set<Class<?>> tempMarkClasses) throws InvocationTargetException, IllegalAccessException {
         for (Class<?> tempMarkClass : tempMarkClasses) {
-            Annotation annotation = tempMarkClass.getAnnotation(markClass);
-            Method[] methods = annotation.annotationType().getMethods();
-            Map<String, String> metadata = new HashMap<>();
-            for (Method method : methods) {
-                if (method.getName().equals("equals") ||
-                        method.getName().equals("hashCode") ||
-                        method.getName().equals("toString") ||
-                        method.getName().equals("annotationType")) {
+            annotationMetadata.put(tempMarkClass.getName(), parseAnnotationMetadata(tempMarkClass, markClass));
+        }
+    }
+
+    public Map<String, String> parseAnnotationMetadata(Class targetClass, Class markClass) throws InvocationTargetException, IllegalAccessException {
+        Annotation annotation = targetClass.getAnnotation(markClass);
+        if (annotation != null) {
+            return parseAnnotationMetadata(annotation);
+        } else {
+            Class[] interfaces = targetClass.getInterfaces();
+            for (Class anInterface : interfaces) {
+                Annotation annotationInterface = anInterface.getAnnotation(markClass);
+                if (annotationInterface == null) {
+                    continue;
                 } else {
-                    Object value = method.invoke(annotation);
-                    metadata.put(method.getName(), value.toString());
+                    return parseAnnotationMetadata(annotationInterface);
                 }
             }
-            annotationMetadata.put(tempMarkClass.getName(), metadata);
         }
+        return null;
+    }
+
+    private Map<String, String> parseAnnotationMetadata(Annotation annotation) throws InvocationTargetException, IllegalAccessException {
+        Method[] methods = annotation.annotationType().getMethods();
+        Map<String, String> metadata = new HashMap<>();
+        for (Method method : methods) {
+            if (method.getName().equals("equals") ||
+                    method.getName().equals("hashCode") ||
+                    method.getName().equals("toString") ||
+                    method.getName().equals("annotationType")) {
+            } else {
+                Object value = method.invoke(annotation);
+                metadata.put(method.getName(), value.toString());
+            }
+        }
+        return metadata;
     }
 
     static class ClassMetadata {
@@ -489,6 +534,7 @@ public class Fizz {
         private List<MethodMetadata> methods;
         private boolean isMapper = false;
         private boolean isFeign = false;
+        private boolean otherInterface = false;
 
         public String getName() {
             return name;
@@ -527,6 +573,14 @@ public class Fizz {
 
         public void setFeign(boolean feign) {
             isFeign = feign;
+        }
+
+        public boolean isOtherInterface() {
+            return otherInterface;
+        }
+
+        public void setOtherInterface(boolean otherInterface) {
+            this.otherInterface = otherInterface;
         }
     }
 
@@ -703,59 +757,6 @@ public class Fizz {
                         add(node);
                     }});
                 }};
-            }
-        }
-    }
-
-    public Map mergeNode(Map allNode) {
-        String project = (String) allNode.get("project");
-        String version = (String) allNode.get("version");
-        Object chainNodeStr = allNode.get("chainNode");
-        LinkedHashMap chainNode = JSON.parseObject(JSON.toJSONString(chainNodeStr), LinkedHashMap.class);
-        Object feignNodeStr = allNode.get("feignNode");
-        Map feignNodeTemp = JSON.parseObject(JSON.toJSONString(feignNodeStr), LinkedHashMap.class);
-        Map<String, Map<String, List<Fizz.Node>>> feignNode = new LinkedHashMap<>();
-        feignNodeTemp.forEach((k, v) -> {
-            String key = k.toString();
-            LinkedHashMap value = JSON.parseObject(JSON.toJSONString(v), LinkedHashMap.class);
-            Map<String, List<Fizz.Node>> tempNode = new LinkedHashMap<>();
-            value.forEach((k1, v1) -> {
-                String key1 = k1.toString();
-                List<Fizz.Node> value1 = JSON.parseArray(JSON.toJSONString(v1), Fizz.Node.class);
-                tempNode.put(key1, value1);
-            });
-            feignNode.put(key, tempNode);
-        });
-        chainNode.forEach((k, v) -> {
-            LinkedHashMap temp = JSON.parseObject(JSON.toJSONString(v), LinkedHashMap.class);
-            Object chain = temp.get("chain");
-            List<Fizz.Node> nodes = JSON.parseArray(JSON.toJSONString(chain), Fizz.Node.class);
-            appendFeign(nodes, feignNode);
-            temp.put("chain", nodes);
-            chainNode.put(k, temp);
-        });
-        LinkedHashMap result = new LinkedHashMap() {{
-            put("project", project);
-            put("version", version);
-            put("data", chainNode);
-        }};
-        return result;
-    }
-
-    private void appendFeign(List<Fizz.Node> nodes, Map<String, Map<String, List<Fizz.Node>>> feignNode) {
-        for (Fizz.Node node : nodes) {
-            boolean feign = node.isFeign();
-            if (feign) {
-                String feignClassName = node.getName().split("#")[0].replaceAll("/", "\\.");
-                Map<String, List<Fizz.Node>> feignNodes = feignNode.get(feignClassName);
-                if (feignNodes != null) {
-                    node.setInterfaceChildren(feignNodes);
-                }
-            } else {
-                List<Fizz.Node> children = node.getChildren();
-                if (children != null) {
-                    appendFeign(children, feignNode);
-                }
             }
         }
     }

@@ -3,9 +3,12 @@ package com.dahuaboke.fizz;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.dahuaboke.fizz.io.FilesReader;
-
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class SimpleChain {
 
@@ -16,9 +19,17 @@ public class SimpleChain {
      */
     private Set<String> annoClass;
 
+    private Map<String,Map> annoClassValue;
 
-    public SimpleChain(Set<String> annoClass) {
-        this.annoClass = annoClass;
+    private Map<String,Set<String>> classTable = new HashMap<>();
+
+
+    public SimpleChain(Map<String,Map> annoClassValue) {
+        if(annoClassValue != null) {
+            this.annoClass = annoClassValue.keySet();
+            this.annoClassValue = annoClassValue;
+        }
+
     }
 
     /**
@@ -28,7 +39,7 @@ public class SimpleChain {
      * @return 简化后的链路字符串
      */
     //TODO 异常处理没做太好
-    public Map<String, Map> run(Map map) {
+    public List<Map> run(Map map) {
         JSONObject json = JSONObject.parseObject(JSON.toJSONString(map));
         JSONObject data = json.getJSONObject("data");
         for (String key : data.keySet()) {
@@ -40,7 +51,33 @@ public class SimpleChain {
                 }
             }
         }
-        return chainsMap;
+        List<Map> list = new ArrayList<>();
+        endExcute(list,chainsMap);
+        return list;
+    }
+
+    /**
+     * 插入注解信息
+     * @param childList 循环中的子节点列表
+     * @param childMap 循环中的子节点类名
+     */
+    private void endExcute(List<Map> childList,Map<String,Map> childMap){
+        for (Map.Entry<String, Map> entry : childMap.entrySet()) {
+            Map<String,Object> map = new HashMap();
+            childList.add(map);
+            if(entry.getKey().toLowerCase().endsWith("mapper")){
+                map.put("tables",classTable.get(entry.getKey()));
+            }
+            map.put("className",entry.getKey());
+            if(annoClassValue != null){
+                map.put("annoValue",annoClassValue.get(entry.getKey().replace("/",".")));
+            }
+            if(entry.getValue() != null){
+                List<Map> list = new ArrayList<>();
+                map.put("childs",list);
+                endExcute(list,entry.getValue());
+            }
+        }
     }
 
     /**
@@ -58,6 +95,21 @@ public class SimpleChain {
             //把类名放进去
             String name = json.getString("name").split("#")[0];
             chains.add(name);
+            if(name.toLowerCase().endsWith("mapper")){
+                JSONArray tables = json.getJSONArray("tables");
+                if(tables != null && tables.size() > 0){
+                    Set<String> set = null;
+                    if(classTable.get(name) == null){
+                        set = new HashSet<>();
+                        classTable.put(name,set);
+                    }else{
+                        set = classTable.get(name);
+                    }
+                    for (int i=0;i<tables.size();i++) {
+                        set.add(tables.get(i).toString());
+                    }
+                }
+            }
             //获取子方法列表和子接口列表
             JSONArray children = json.getJSONArray("children");
             JSONObject ifChildren = json.getJSONObject("interfaceChildren");
@@ -66,9 +118,10 @@ public class SimpleChain {
                 for (int i = 0; i < children.size(); i++) {
                     recursion(chains, children.getJSONObject(i));
                 }
-            } else if (ifChildren != null && ifChildren.size() > 0) {
+            }
+            if (ifChildren != null && ifChildren.size() > 0) {
                 //子接口列表，把本机name删掉，因为要接口替换为实现类，之后进行递归
-                chains.remove(chains.size() - 1);
+//                chains.remove(chains.size() - 1);
                 for (String key : ifChildren.keySet()) {
                     JSONArray implArr = ifChildren.getJSONArray(key);
                     for (int j = 0; j < implArr.size(); j++) {
@@ -76,9 +129,10 @@ public class SimpleChain {
                     }
                 }
                 //最后把接口名重新加上，因为补偿最后的移除操作
-                chains.add(name);
-            } else {
-                //如果既没有子方法列表，也没有子接口列表，链路已完整，可以添加到chainsMap中
+//                chains.add(name);
+            }
+            //如果既没有子方法列表，也没有子接口列表，链路已完整，可以添加到chainsMap中
+            if((children == null || children.size() == 0) && (ifChildren == null || ifChildren.size() == 0)) {
                 addChains(chains);
             }
             //离开本层级时，删掉本层级的类名，才能回到上一个层级
@@ -93,10 +147,9 @@ public class SimpleChain {
      */
     private void addChains(List<String> chains) {
         List<String> list = new ArrayList<>();
-        //过滤非注解界定，头节点不过滤
+        //过滤非注解界定，头节点和mapper节点不过滤
         for (int i = 0; i < chains.size(); i++) {
-            //相邻相同过滤
-            if (i == 0 || ((annoClass == null || annoClass.size() == 0 || annoClass.contains(chains.get(i))) && !list.get(list.size() - 1).equals(chains.get(i)))) {
+            if (i == 0 || chains.get(i).toLowerCase().endsWith("mapper") || ((annoClass == null || annoClass.size() == 0 || annoClass.contains(chains.get(i).replace("/",".")) && !list.get(list.size() - 1).equals(chains.get(i))))) {
                 list.add(chains.get(i));
             }
         }
@@ -125,5 +178,4 @@ public class SimpleChain {
             map = map.get(str);
         }
     }
-
 }

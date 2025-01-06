@@ -1,9 +1,11 @@
 package com.dahuaboke.fizz;
 
-import com.alibaba.fastjson2.JSON;
-
 import java.lang.annotation.Annotation;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * author: dahua
@@ -11,26 +13,32 @@ import java.util.*;
  */
 public class AnnotationMark {
 
-    public List<Map<String, String>> markAnnotations(Fizz fizz, Map<String, String> annotations) {
+    public List<Map<String, Object>> markAnnotations(Fizz fizz, Map<String, String> annotations) {
         if (annotations == null) {
             return null;
         }
-        List<Map<String, String>> result = new ArrayList<>();
+        List<Map<String, Object>> result = new ArrayList<>();
         annotations.forEach((markAnnotation, name) -> {
             try {
-                Map<String, String> map = new LinkedHashMap<>();
+                Map map = new LinkedHashMap<>();
                 Class<? extends Annotation> markClass = (Class<? extends Annotation>) Class.forName(markAnnotation);
                 Set<Class<?>> tempMarkClasses = fizz.searchClassByAnnotation(markClass);
                 map.put("name", name);
-                HashSet<String> classes = new HashSet<>();
-                for (Class<?> tempMarkClass : tempMarkClasses) {
-                    classes.add(tempMarkClass.getName());
+                Map<String, Object> classes = new LinkedHashMap<>();
+                for (Class<?> targetClass : tempMarkClasses) {
+                    String targetClassName = targetClass.getName();
+                    classes.put(targetClassName, "");
+                    Map<String, String> annotationsData = fizz.parseAnnotationMetadata(targetClass, markClass);
+                    if (annotationsData == null) {
+                        continue;
+                    }
+                    classes.put(targetClassName, annotationsData);
                 }
-                map.put("classes", JSON.toJSONString(classes));
+                map.put("classes", classes);
                 map.put("annotation", markAnnotation);
-                map.put("size", String.valueOf(tempMarkClasses.size()));
+                map.put("size", tempMarkClasses.size());
                 result.add(map);
-            } catch (ClassNotFoundException e) {
+            } catch (Exception e) {
             }
         });
         return result;

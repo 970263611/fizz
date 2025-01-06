@@ -26,11 +26,11 @@
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <asm.ver>9.7.1</asm.ver>
+        <asm.ver>9.7</asm.ver>
         <reflections.ver>0.10.2</reflections.ver>
         <maven.ver>3.5.2</maven.ver>
         <project.ver>2.2.1</project.ver>
-        <fastjson2.ver>2.0.52</fastjson2.ver>
+        <fastjson2.ver>2.0.51</fastjson2.ver>
         <jsqlparser.var>4.5</jsqlparser.var>
         <mybatis.version>3.5.1</mybatis.version>
         <druid.version>1.2.23</druid.version>

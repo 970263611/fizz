@@ -1,6 +1,7 @@
 package com.dahuaboke.fizz.util;
 
 import com.alibaba.druid.DbType;
+import com.dahuaboke.fizz.Constants;
 import com.wjy.mapper2sql.SqlUtil;
 import com.wjy.mapper2sql.bo.MapperSqlInfo;
 import net.sf.jsqlparser.JSQLParserException;
@@ -15,28 +16,45 @@ import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.update.Update;
 
-
-import java.io.*;
-
-import java.util.*;
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class SqlUtils {
 
     private static final String TMP_DIC = "tmp";
-    //获取全部xml
+
     private static final String SUFFIX = "Mapper.xml";
+
+    private static final String ANNO_BASE_MAPPER = "com.baomidou.mybatisplus.core.mapper.BaseMappe";
+
+    private static final String ANNO_TABLE_NAME = "com.baomidou.mybatisplus.annotation.TableName";
+
+    private static final String ANNO_TABLE_NAME_FIELD = "value";
 
     /**
      * 解压jar包，在jar包所在的路径的tmp文件夹解压
+     *
      * @param jarFilePath
      */
-    public static List<String> findAllJarList(String jarFilePath,String tmpdic) {
+    private static List<String> findAllJarList(String jarFilePath, String tmpdic) {
         List<String> jarPathList = new ArrayList<>();
         jarPathList.add(jarFilePath);
         try {
@@ -56,7 +74,7 @@ public class SqlUtils {
                     InputStream is = jarFile.getInputStream(entry);
                     byte[] buffer = new byte[1024];
                     int length = -1;
-                    while((length = is.read(buffer)) != -1) {
+                    while ((length = is.read(buffer)) != -1) {
                         fos.write(buffer, 0, length);
                     }
                     fos.flush();
@@ -79,7 +97,7 @@ public class SqlUtils {
      * @param jarPath jar包全路径名
      * @return 文件的输入流
      */
-    public static Map<String, InputStream> findStreamByEndInJar(String jarPath, String suffix) {
+    private static Map<String, InputStream> findStreamByEndInJar(String jarPath, String suffix) {
         Map<String, InputStream> map = new HashMap();
         JarFile jarFile = null;
         try {
@@ -109,63 +127,67 @@ public class SqlUtils {
         if (jarFile != null) {
             try {
                 jarFile.close();
-            } catch (IOException e) {}
+            } catch (IOException e) {
+            }
         }
         return map;
     }
 
     /**
      * 去掉字符串两侧的双引号
+     *
      * @param str
      * @return
      */
-    public static String removeQuotes(String str){
+    private static String removeQuotes(String str) {
         Pattern pattern = Pattern.compile("^\"(.*)\"$");
         Matcher matcher = pattern.matcher(str);
         if (matcher.matches()) {
             return matcher.group(1);
-        }else {
+        } else {
             return str;
         }
     }
 
     /**
      * 从sql中提取表名
+     *
      * @param sql sql语句
      * @param way 方式编号
      * @return 表名set
      */
-    public static Set<String> findTableNameInSql(String sql,int way) {
+    private static Set<String> findTableNameInSql(String sql, int way) {
         Set<String> set = new HashSet<>();
-        if(sql == null || sql.length() == 0){
+        if (sql == null || sql.length() == 0) {
             return set;
-        }else{
-            sql = sql.replace("?","''");
+        } else {
+            sql = sql.replace("?", "''");
         }
         List<String> tableNames = null;
-        switch (way){
+        switch (way) {
             case 0:
                 try {
                     Statement statement = CCJSqlParserUtil.parse(sql);
-                    if(statement instanceof Select){
+                    if (statement instanceof Select) {
                         tableNames = extractSelectTableNames(sql);
-                    }else if(statement instanceof Update){
+                    } else if (statement instanceof Update) {
                         Update update = (Update) statement;
-                        tableNames = new ArrayList(){{
+                        tableNames = new ArrayList() {{
                             add(update.getTable().getName());
                         }};
-                    }else if(statement instanceof Delete){
+                    } else if (statement instanceof Delete) {
                         Delete delete = (Delete) statement;
-                        tableNames = new ArrayList(){{
+                        tableNames = new ArrayList() {{
                             add(delete.getTable().getName());
                         }};
-                    }else if(statement instanceof Insert){
+                    } else if (statement instanceof Insert) {
                         Insert insert = (Insert) statement;
-                        tableNames = new ArrayList(){{
+                        tableNames = new ArrayList() {{
                             add(insert.getTable().getName());
                         }};
                     }
-                }catch (Exception e){}
+                } catch (Exception e) {
+                }
                 break;
             default:
                 tableNames = SQLTableExtractor.extractTableNames(sql);
@@ -181,7 +203,7 @@ public class SqlUtils {
     /**
      * 删除文件夹及文件夹内的文件
      */
-    public static void deleteFolder(File folder) {
+    private static void deleteFolder(File folder) {
         File[] files = folder.listFiles();
         if (files != null) {
             for (File file : files) {
@@ -202,7 +224,7 @@ public class SqlUtils {
         }
     }
 
-    public static List<String> extractSelectTableNames(String sql) {
+    private static List<String> extractSelectTableNames(String sql) {
         List<String> tableNames = new ArrayList<>();
         try {
             Statement statement = CCJSqlParserUtil.parse(sql);
@@ -233,22 +255,20 @@ public class SqlUtils {
 
     /**
      * 从指定jar包的中找到所有mapper，并找到每个sql对应的表名
+     *
      * @param jarPath jar包路径
-     * @return  key: namespace.id    value: 表名 Set<String>
+     * @return key: namespace.id    value: 表名 Set<String>
      */
-    public static Map<String,Set<String>> findTableNameInJar(String jarPath) {
-        //druid日志级别设置为error
-        Logger logger = Logger.getLogger("com.alibaba.druid.sql");
-        logger.setLevel(Level.SEVERE);
-        Map<String,Set<String>> map = new HashMap();
+    public static Map<Constants.SqlMap, Map<String, Set<String>>> findTableNameInJar(String jarPath) {
+        Map<String, Set<String>> map = new HashMap();
         //创建解压路径
-        if(jarPath == null || !jarPath.endsWith(".jar")){
-            return map;
+        if (jarPath == null || !jarPath.endsWith(".jar")) {
+            return endExcute(map);
         }
-        jarPath = jarPath.replace("\\","/");
+        jarPath = jarPath.replace("\\", "/");
         int lastIndex = jarPath.lastIndexOf('/');
         String tmpdic = null;
-        if (lastIndex!= -1) {
+        if (lastIndex != -1) {
             tmpdic = jarPath.substring(0, lastIndex + 1) + TMP_DIC;
         }
         File outputFile = new File(tmpdic);
@@ -295,23 +315,78 @@ public class SqlUtils {
                 } catch (Exception e) {
                 }
             }
-        }finally {
+        } finally {
             deleteFolder(outputFile);
         }
-        return map;
+        return endExcute(map);
     }
 
-
-//    public static void main(String[] args) {
-//        String jarFilePath = "C:\\Users\\23195\\Desktop\\ttt\\demojar\\demo.jar";
-//        Map<String, Set<String>> tableNameInJar = findTableNameInJar(jarFilePath);
-//        tableNameInJar.forEach((k,v) -> {
-//            if(v.size() == 0) {
-//                System.out.println(k + "=" + v);
-//            }
-//        });
-//        findTableNameInJar(jarFilePath);
-//    }
-
+    /**
+     * 从Entity中@TableName上找到表名
+     *
+     * @param map Constants.SqlMap.SQLID_TABLES
+     * @return 整合后map
+     */
+    private static Map<Constants.SqlMap, Map<String, Set<String>>> endExcute(Map<String, Set<String>> map) {
+        Map<Constants.SqlMap, Map<String, Set<String>>> rmap = new HashMap<>();
+        rmap.put(Constants.SqlMap.SQLID_TABLES, map);
+        Map<String, Set<String>> defaultMap = new HashMap();
+        rmap.put(Constants.SqlMap.ENTITY_TABLES, defaultMap);
+        //这两个注解必须存在
+        Class<?> bmClz = null;
+        Class<? extends Annotation> tnClz = null;
+        try {
+            bmClz = Class.forName(ANNO_BASE_MAPPER);
+            tnClz = (Class<? extends Annotation>) Class.forName(ANNO_TABLE_NAME);
+        } catch (ClassNotFoundException e) {
+        }
+        if (bmClz != null && tnClz != null) {
+            for (String s : map.keySet()) {
+                String ss = s.substring(0, s.lastIndexOf("."));
+                try {
+                    Class<?> clz = Class.forName(ss);
+                    //找到mapper所有的父接口
+                    Type[] interfaces = clz.getGenericInterfaces();
+                    if (interfaces != null) {
+                        for (Type anInterface : interfaces) {
+                            if (anInterface instanceof ParameterizedType) {
+                                ParameterizedType pt = (ParameterizedType) anInterface;
+                                //在所有的父接口中找到BaseMapper这个接口
+                                if (pt.getRawType() != null && pt.getRawType() == bmClz) {
+                                    Type[] actualTypeArguments = pt.getActualTypeArguments();
+                                    if (actualTypeArguments != null && actualTypeArguments.length > 0) {
+                                        //BaseMapper接口有一个泛型，指向一个Entity
+                                        Type baseArg = actualTypeArguments[0];
+                                        try {
+                                            Class<?> aClass = Class.forName(baseArg.getTypeName());
+                                            if (aClass != null) {
+                                                //Entity上有@TableName注解指定表名
+                                                Annotation annoTn = aClass.getAnnotation(tnClz);
+                                                if (annoTn != null) {
+                                                    Method value = annoTn.annotationType().getDeclaredMethod(ANNO_TABLE_NAME_FIELD);
+                                                    value.setAccessible(true);
+                                                    Object obj = value.invoke(annoTn);
+                                                    if (obj != null) {
+                                                        defaultMap.put(ss, new HashSet<String>() {{
+                                                            add(obj.toString());
+                                                        }});
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        } catch (Exception e) {
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (ClassNotFoundException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        return rmap;
+    }
 
 }

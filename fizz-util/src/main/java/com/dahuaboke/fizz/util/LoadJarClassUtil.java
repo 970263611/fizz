@@ -1,5 +1,6 @@
 package com.dahuaboke.fizz.util;
 
+import org.objectweb.asm.ClassReader;
 import org.reflections.Reflections;
 import org.reflections.util.ConfigurationBuilder;
 
@@ -42,12 +43,14 @@ public final class LoadJarClassUtil {
     /**
      * 类对应类文件流
      */
-    private Map<String, InputStream> CLASSES_FILE = new HashMap<>();
+    private Map<String, ClassReader> CLASSES_FILE = new HashMap<>();
 
     /**
      * 实例化的类
      */
     private Set<Class<?>> classInstanceSet = new HashSet<>();
+
+    private Map<String,Class<?>> classInstanceMap = new HashMap<>();
 
     private String jarPath;
 
@@ -66,6 +69,9 @@ public final class LoadJarClassUtil {
             loadJar(new File(jarPath),
                     this.includePrefixArr == null ? null : Arrays.stream(includePrefixArr).collect(Collectors.toSet()),
                     this.excludePrefixArr == null ? null : Arrays.stream(excludePrefixArr).collect(Collectors.toSet()));
+            classInstanceSet.forEach(a -> {
+                classInstanceMap.put(a.getName(),a);
+            });
         } catch (NoSuchMethodException e) {
             throw new RuntimeException(e);
         }
@@ -88,8 +94,8 @@ public final class LoadJarClassUtil {
      * @return 已加载了的class实例集合
      */
     public void loadJar(File jarOrDirFile,
-                                        Set<String> includePrefixSet,
-                                        Set<String> excludePrefixSet) {
+                        Set<String> includePrefixSet,
+                        Set<String> excludePrefixSet) {
         List<File> jarFileList = IOUtil.listFileOnly(jarOrDirFile, JAR_SUFFIX);
         List<File> bootJarFileList = new ArrayList<>(16);
         List<File> normalJarFileList = new ArrayList<>(16);
@@ -121,8 +127,8 @@ public final class LoadJarClassUtil {
      * @return 已加载了的class实例集合
      */
     public Set<Class<?>> loadClass(Set<File> classLongNameRootDirSet,
-                                          Set<String> includePrefixSet,
-                                          Set<String> excludePrefixSet) {
+                                   Set<String> includePrefixSet,
+                                   Set<String> excludePrefixSet) {
 
         if (classLongNameRootDirSet == null || classLongNameRootDirSet.size() == 0) {
             //System.out.println(("classLongNameRootDirSet is empty.");
@@ -155,10 +161,9 @@ public final class LoadJarClassUtil {
                         String classLongPath = absolutePath.substring(classLongNameStartIndex,
                                 absolutePath.length() - CLASS_SUFFIX_LENGTH);
                         String className = classLongPath.replace('\\', '.').replace("/", ".");
-                        try {
-                            CLASSES_FILE.put(className, new FileInputStream(classFile));
-                        } catch (FileNotFoundException e) {
-                        }
+                        try(FileInputStream fis = new FileInputStream(classFile)) {
+                            CLASSES_FILE.put(className, new ClassReader(fis));
+                        } catch (Exception e) {}
                         return className;
                     }).filter(classLongName -> {
                         if (excludePrefixSet != null && excludePrefixSet.size() > 0) {
@@ -197,8 +202,8 @@ public final class LoadJarClassUtil {
      * @return 已加载了的class文件全类名集合
      */
     private Set<Class<?>> loadBootJar(List<File> jarFileList,
-                                             Set<String> includePrefixSet,
-                                             Set<String> excludePrefixSet) {
+                                      Set<String> includePrefixSet,
+                                      Set<String> excludePrefixSet) {
         Set<Class<?>> classInstanceSet = new HashSet<>();
         if (jarFileList == null || jarFileList.size() == 0) {
             return classInstanceSet;
@@ -262,9 +267,9 @@ public final class LoadJarClassUtil {
      * @return 已加载了的class集合
      */
     private Set<Class<?>> loadNormalJar(List<File> jarFileList,
-                                               boolean instanceClass,
-                                               Set<String> includePrefixSet,
-                                               Set<String> excludePrefixSet) {
+                                        boolean instanceClass,
+                                        Set<String> includePrefixSet,
+                                        Set<String> excludePrefixSet) {
         Set<Class<?>> classInstanceSet = new HashSet<>();
         if (jarFileList == null || jarFileList.size() == 0) {
             return classInstanceSet;
@@ -300,14 +305,14 @@ public final class LoadJarClassUtil {
                                 continue;
                             }
                         }
-                        try {
-                            CLASSES_FILE.put(classLongName, classLoader.getResourceAsStream(zipEntryName));
-                        } catch (Exception e) {
-                        }
-                        Class<?> instance = createClassInstance(classLongName);
-                        if (instance != null) {
-                            classInstanceSet.add(instance);
-                        }
+                        try(InputStream is = classLoader.getResourceAsStream(zipEntryName)){
+                            CLASSES_FILE.put(classLongName, new ClassReader(is));
+                        } catch (Exception e) {}
+                        //TODO
+//                        Class<?> instance = createClassInstance(classLongName);
+//                        if (instance != null) {
+//                            classInstanceSet.add(instance);
+//                        }
                     }
                 } finally {
                     IOUtil.close(zipFile);
@@ -554,7 +559,7 @@ public final class LoadJarClassUtil {
             if (dirOrFile.isFile()) {
                 boolean success = dirOrFile.delete();
                 if (!success) {
-                    //System.out.println(("delete file [" + dirOrFile.getAbsolutePath() + "] fail.");
+                    System.out.println(("delete file [" + dirOrFile.getAbsolutePath() + "] fail."));
                 }
             } else {
                 File[] files = dirOrFile.listFiles();
@@ -584,7 +589,7 @@ public final class LoadJarClassUtil {
                 try {
                     io.close();
                 } catch (IOException e) {
-                    // ignore
+                    e.printStackTrace();
                 }
             }
         }
@@ -681,10 +686,19 @@ public final class LoadJarClassUtil {
         }
     }
 
-    public InputStream getClassInputStream(String name) {
+    /**
+     * 获取文件流
+     * @param name
+     * @return
+     */
+    public ClassReader getClassReader(String name) {
         return CLASSES_FILE.get(name.replaceAll("/", "\\."));
     }
 
+    /**
+     * 获取类解析器
+     * @return
+     */
     public URLClassLoader getClassLoader() {
         return classLoader;
     }
@@ -761,5 +775,7 @@ public final class LoadJarClassUtil {
         return set;
     }
 
-
+    public Class<?> getClassByName(String className) {
+        return classInstanceMap.get(className);
+    }
 }
