@@ -18,7 +18,6 @@
         <module>fizz-util</module>
         <module>maven-fizz-plugin</module>
         <module>fizz-sql-mock</module>
-        <module>fizz-web</module>
     </modules>
 
     <properties>

@@ -29,7 +29,7 @@ public class ChainsJoin {
 
     private static String writePath = rootPath + "ifund_1.0.0.json";
 
-    public static void main(String[] args) {
+    public static void  main(String[] args) {
         Map<String, Map<String, Object>> componentMap = new HashMap<>();
         Map<String, Object> allMap = new HashMap() {{
             put("project", project);
