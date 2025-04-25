@@ -148,9 +148,10 @@ public class SimpleChain {
     private void addChains(List<String> chains) {
         List<String> list = new ArrayList<>();
         //过滤非注解界定，头节点和mapper节点不过滤
-        for (int i = 0; i < chains.size(); i++) {
-            if (i == 0 || chains.get(i).toLowerCase().endsWith("mapper") || ((annoClass == null || annoClass.size() == 0 || annoClass.contains(chains.get(i).replace("/",".")) && !list.get(list.size() - 1).equals(chains.get(i))))) {
-                list.add(chains.get(i));
+        for(int i=0;i<chains.size();i++){
+            String className = chains.get(i).replace(".","/");
+            if (i == 0 || chains.get(i).toLowerCase().endsWith("mapper") || ((annoClass == null || annoClass.size() == 0 || annoClass.contains(className.replace("/",".")) && !list.get(list.size() - 1).equals(className)))) {
+                list.add(className);
             }
         }
         if (list.size() == 0) {

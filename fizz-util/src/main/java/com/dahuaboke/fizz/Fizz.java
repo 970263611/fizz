@@ -631,9 +631,16 @@ public class Fizz {
 
         public void setInterfaceTrace(TraceMetadata data) {
             String key = data.getClassName();
-            if (this.interfaceTraces != null && this.interfaceTraces.containsKey(key)) {
-                List<TraceMetadata> traceMetadata = this.interfaceTraces.get(key);
-                traceMetadata.add(data);
+            if (this.interfaceTraces != null) {
+                if(this.interfaceTraces.containsKey(key)){
+                    List<TraceMetadata> traceMetadata = this.interfaceTraces.get(key);
+                    traceMetadata.add(data);
+                }else{
+                    this.interfaceTraces.put(key, new LinkedList(){{
+                        add(data);
+                    }});
+                }
+
             } else {
                 this.interfaceTraces = new LinkedHashMap() {{
                     put(key, new ArrayList<TraceMetadata>() {{
@@ -748,9 +755,15 @@ public class Fizz {
         }
 
         public void setInterfaceChildren(String key, Node node) {
-            if (this.interfaceChildren != null && this.interfaceChildren.containsKey(key)) {
-                List<Node> nodeList = this.interfaceChildren.get(key);
-                nodeList.add(node);
+            if (this.interfaceChildren != null) {
+                if(this.interfaceChildren.containsKey(key)){
+                    List<Node> nodeList = this.interfaceChildren.get(key);
+                    nodeList.add(node);
+                }else{
+                    this.interfaceChildren.put(key, new LinkedList(){{
+                        add(node);
+                    }});
+                }
             } else {
                 this.interfaceChildren = new LinkedHashMap() {{
                     put(key, new ArrayList<Node>() {{
